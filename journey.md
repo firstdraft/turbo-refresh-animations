@@ -246,46 +246,7 @@ Turbo Streams *also* respect `data-turbo-permanent`! The "Bardo" mechanism (name
 
 ---
 
-## Step 5: Conditional data-turbo-permanent
-
-We examined `getPermanentElementMapForFragment` more closely:
-
-```javascript
-function getPermanentElementMapForFragment(fragment) {
-  const permanentElementsInDocument = queryPermanentElementsAll(document.documentElement)
-  for (const permanentElementInDocument of permanentElementsInDocument) {
-    const { id } = permanentElementInDocument
-    const elementInStream = getPermanentElementById(streamElement.templateElement.content, id)
-    if (elementInStream) {
-      permanentElementMap[id] = [permanentElementInDocument, elementInStream]
-    }
-  }
-}
-```
-
-**Key insight**: For Bardo preservation to occur, **both** the existing document element **and** the incoming stream fragment must have `data-turbo-permanent` with matching IDs.
-
-### Attempted Solution
-
-Render the form differently based on context:
-
-```erb
-<%= f.text_field :title,
-    data: { turbo_permanent: local_assigns.fetch(:preserve_input, false) || nil } %>
-```
-
-- Page renders with `preserve_input: true` → has `data-turbo-permanent`
-- Controller response with `preserve_input: false` → no attribute
-
-**Theory**: Since the stream fragment wouldn't have `data-turbo-permanent`, Bardo wouldn't preserve, and the form would be replaced.
-
-### The Problem
-
-This didn't work reliably for redirects. Page visits (not just morphs) also respect `data-turbo-permanent`, so the redirect still preserved the form.
-
----
-
-## Step 6: turbo_stream.refresh from Controller
+## Step 5: turbo_stream.refresh from Controller
 
 We tried returning `turbo_stream.refresh` to trigger a morph with View Transitions for the initiating client:
 
@@ -400,7 +361,7 @@ We can't use `turbo_stream.replace` on the form itself (blocked by `data-turbo-p
 
 ---
 
-## Step 7: The Quest for a Stimulus-Free Solution
+## Step 6: The Quest for a Stimulus-Free Solution
 
 The Stimulus solution worked, but it felt like unnecessary complexity. We were using JavaScript to clear a form after submission—something that should "just work" with proper Turbo configuration. The core issue: `data-turbo-permanent` is too broad. It protects elements during *all* updates, but we only needed protection during *broadcast-triggered* morphs.
 
