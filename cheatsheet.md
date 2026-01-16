@@ -1,18 +1,17 @@
-# Turbo Refresh + View Transitions Cheatsheet
+# Turbo Refresh Animations Cheatsheet
 
-Quick implementation guide for animating Turbo Refresh morphs with View Transitions API.
+Quick implementation guide for animating Turbo Refresh morphs with CSS class-based animations.
 
 ## Prerequisites
 
 - Rails 8+ with Turbo
 - A model using `broadcasts_refreshes_to`
 
-## Step 1: Enable View Transitions
+## Step 1: Enable Morphing
 
 Add to your layout's `<head>`:
 
 ```erb
-<meta name="view-transition" content="same-origin">
 <%= turbo_refreshes_with method: :morph, scroll: :preserve %>
 ```
 
@@ -21,169 +20,162 @@ Add to your layout's `<head>`:
 Add to `app/javascript/application.js`:
 
 ```javascript
+import "@hotwired/turbo-rails"
+import "controllers"
+
 // ========== FORM PROTECTION ==========
-// Protects forms during broadcast refreshes while allowing them to clear on redirect.
+// Protect elements with data-turbo-stream-refresh-permanent during morphs,
+// EXCEPT the specific form the user is currently submitting.
+let submittingFormId = null
 
-let inStreamRefresh = false
-let expectingRefreshVisit = false
-let userNavigationPending = false
-let recentlySubmitted = false  // Track if we just submitted (persists through redirect)
-
-document.addEventListener("turbo:submit-start", () => {
-  userNavigationPending = true
-  recentlySubmitted = true
+document.addEventListener("turbo:submit-start", (event) => {
+  const form = event.target
+  const wrapper = form.closest('[data-turbo-stream-refresh-permanent]')
+  submittingFormId = wrapper?.id || null
 })
 
 document.addEventListener("turbo:submit-end", (event) => {
   if (!event.detail.fetchResponse?.response?.redirected) {
-    userNavigationPending = false
+    submittingFormId = null
   }
 })
 
-document.addEventListener("turbo:click", () => {
-  userNavigationPending = true
-})
+// ========== DELETE ANIMATIONS ==========
+let pendingDeletions = new Map()
 
-document.addEventListener("turbo:before-stream-render", (event) => {
-  if (event.target.getAttribute("action") === "refresh") {
-    inStreamRefresh = true
-    expectingRefreshVisit = true
+// For submitter: intercept click, animate, then proceed
+document.addEventListener("click", (event) => {
+  const link = event.target.closest('a[data-turbo-method="delete"]')
+  if (!link) return
 
-    // Flash protected elements to signal "data changed elsewhere"
-    // Skip if we just submitted (we'll see the item flash via View Transitions instead)
-    if (!recentlySubmitted) {
-      document.querySelectorAll('[data-turbo-stream-refresh-permanent][data-view-transition-animation-class]').forEach(el => {
-        const animationClass = el.dataset.viewTransitionAnimationClass
-        el.classList.add(animationClass)
-        el.addEventListener("animationend", () => el.classList.remove(animationClass), { once: true })
-      })
+  const item = link.closest('[data-turbo-stream-refresh-delete-animation]')
+  if (!item) return
+
+  if (item.dataset.deleteAnimationDone) return
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  const animClass = item.dataset.turboStreamRefreshDeleteAnimation
+  item.classList.add(animClass)
+  item.addEventListener("animationend", () => {
+    item.dataset.deleteAnimationDone = "true"
+    link.click()
+  }, { once: true })
+}, { capture: true })
+
+// ========== MORPH PROTECTION ==========
+document.addEventListener("turbo:before-morph-element", (event) => {
+  const el = event.target
+
+  // Protect permanent elements, unless it's the form we're submitting
+  if (el.hasAttribute("data-turbo-stream-refresh-permanent")) {
+    if (el.id !== submittingFormId) {
+      event.preventDefault()
+      return
     }
   }
-})
 
-document.addEventListener("turbo:before-morph-element", (event) => {
-  if (inStreamRefresh && event.target.hasAttribute("data-turbo-stream-refresh-permanent")) {
+  // For other clients: animate deletion before removal
+  const id = el.dataset?.turboStreamRefreshId
+  const deleteAnim = el.dataset?.turboStreamRefreshDeleteAnimation
+  if (id && deleteAnim && pendingDeletions.has(id)) {
     event.preventDefault()
-  }
-})
-
-document.addEventListener("turbo:visit", () => {
-  if (userNavigationPending) {
-    inStreamRefresh = false
-    userNavigationPending = false
-    expectingRefreshVisit = false
-  } else if (expectingRefreshVisit) {
-    expectingRefreshVisit = false
-  } else {
-    inStreamRefresh = false
+    el.classList.add(deleteAnim)
+    el.addEventListener("animationend", () => {
+      el.remove()
+      pendingDeletions.delete(id)
+    }, { once: true })
   }
 })
 
 document.addEventListener("turbo:render", () => {
-  inStreamRefresh = false
-  userNavigationPending = false
-  // Delay clearing recentlySubmitted so we still skip the broadcast flash
-  // that arrives shortly after our own submission
-  setTimeout(() => { recentlySubmitted = false }, 500)
+  submittingFormId = null
 })
 
-// ========== VIEW TRANSITIONS ==========
-// Animates only elements that actually change (creates, deletes, modifications).
+// ========== ANIMATIONS ==========
+// Animate elements during Turbo morphs using CSS class-based animations.
+// Elements opt-in via data attributes:
+//   data-turbo-stream-refresh-id="unique-id" - identifies element for tracking
+//   data-turbo-stream-refresh-content="value" - content to compare (optional)
+//   data-turbo-stream-refresh-create-animation="class" - animation for new elements
+//   data-turbo-stream-refresh-update-animation="class" - animation for modified elements
+//   data-turbo-stream-refresh-delete-animation="class" - animation for removed elements
+
+let pendingAnimations = []
+
+function applyAnimation(el, animClass) {
+  el.classList.add(animClass)
+  el.addEventListener("animationend", () => el.classList.remove(animClass), { once: true })
+}
 
 document.addEventListener("turbo:before-render", (event) => {
   if (!event.detail.newBody) return
-  if (!document.startViewTransition) return
 
   const oldMap = new Map()
-  document.querySelectorAll('[data-view-transition-id]').forEach(el => {
-    oldMap.set(el.dataset.viewTransitionId, {
-      element: el,
-      text: el.textContent.trim()
+  document.querySelectorAll('[data-turbo-stream-refresh-id]').forEach(el => {
+    oldMap.set(el.dataset.turboStreamRefreshId, {
+      content: el.dataset.turboStreamRefreshContent || el.textContent.trim(),
+      el: el,
+      isPermanent: el.hasAttribute("data-turbo-stream-refresh-permanent")
     })
   })
 
   const newMap = new Map()
-  event.detail.newBody.querySelectorAll('[data-view-transition-id]').forEach(el => {
-    newMap.set(el.dataset.viewTransitionId, {
-      element: el,
-      text: el.textContent.trim()
+  event.detail.newBody.querySelectorAll('[data-turbo-stream-refresh-id]').forEach(el => {
+    newMap.set(el.dataset.turboStreamRefreshId, {
+      content: el.dataset.turboStreamRefreshContent || el.textContent.trim(),
+      createAnim: el.dataset.turboStreamRefreshCreateAnimation,
+      updateAnim: el.dataset.turboStreamRefreshUpdateAnimation
     })
   })
 
-  const toAnimate = []
+  pendingAnimations = []
+  pendingDeletions = new Map()
+
+  // Deletions: in old but not new
+  oldMap.forEach((oldData, id) => {
+    if (!newMap.has(id) && oldData.el.dataset.turboStreamRefreshDeleteAnimation) {
+      pendingDeletions.set(id, true)
+    }
+  })
 
   // Creates: in new but not old
   newMap.forEach((newData, id) => {
-    if (!oldMap.has(id)) {
-      toAnimate.push({ id, oldEl: null, newEl: newData.element })
+    if (!oldMap.has(id) && newData.createAnim) {
+      pendingAnimations.push({ id, animClass: newData.createAnim })
     }
   })
 
-  // Deletes: excluded by default (looks awkward - see journey.md)
-  // Uncomment to enable:
-  // oldMap.forEach((oldData, id) => {
-  //   if (!newMap.has(id)) {
-  //     toAnimate.push({ id, oldEl: oldData.element, newEl: null })
-  //   }
-  // })
-
-  // Modifications: in both but textContent differs
+  // Modifications: in both but content differs
   oldMap.forEach((oldData, id) => {
     if (newMap.has(id)) {
       const newData = newMap.get(id)
-      if (oldData.text !== newData.text) {
-        toAnimate.push({ id, oldEl: oldData.element, newEl: newData.element })
-      }
-    }
-  })
-
-  if (toAnimate.length === 0) return
-
-  event.preventDefault()
-
-  toAnimate.forEach(({ id, oldEl }) => {
-    if (oldEl) {
-      oldEl.style.viewTransitionName = id
-      if (oldEl.dataset.viewTransitionClass) {
-        oldEl.style.viewTransitionClass = oldEl.dataset.viewTransitionClass
-      }
-    }
-  })
-
-  const transition = document.startViewTransition(() => {
-    toAnimate.forEach(({ id, newEl }) => {
-      if (newEl) {
-        newEl.style.viewTransitionName = id
-        if (newEl.dataset.viewTransitionClass) {
-          newEl.style.viewTransitionClass = newEl.dataset.viewTransitionClass
+      if (oldData.content !== newData.content && newData.updateAnim) {
+        if (oldData.isPermanent && oldData.el.id !== submittingFormId) {
+          applyAnimation(oldData.el, newData.updateAnim)
+        } else {
+          pendingAnimations.push({ id, animClass: newData.updateAnim })
         }
       }
-    })
-    event.detail.resume()
+    }
   })
+})
 
-  transition.finished.then(() => {
-    document.querySelectorAll('[data-view-transition-id]').forEach(el => {
-      el.style.viewTransitionName = ''
-      el.style.viewTransitionClass = ''
-    })
+document.addEventListener("turbo:render", () => {
+  pendingAnimations.forEach(({ id, animClass }) => {
+    const el = document.querySelector(`[data-turbo-stream-refresh-id="${id}"]`)
+    if (el) {
+      applyAnimation(el, animClass)
+    }
   })
+  pendingAnimations = []
 })
 ```
 
 ## Step 3: Add the CSS
 
-Based on jQuery/jQuery UI defaults: **400ms** duration, **ease-in-out** (swing) easing, **#ffff99** highlight color.
-
-**Important**: Use `box-shadow` for flash effects—`background-color` doesn't work on View Transition pseudo-elements because they contain snapshot images.
-
-Add to your stylesheet:
-
 ```css
-/*
- * View Transitions animations
- * Uses box-shadow for flash effects (background-color doesn't work on snapshots)
- */
 @keyframes flash-green {
   0%, 100% { box-shadow: none; }
   20% { box-shadow: 0 0 0 4px #d4edda, 0 0 12px #28a745; }
@@ -194,125 +186,55 @@ Add to your stylesheet:
   20% { box-shadow: 0 0 0 4px #ffff99, 0 0 12px #ffff99; }
 }
 
-@keyframes flash-red {
-  0%, 100% { box-shadow: none; }
-  20% { box-shadow: 0 0 0 4px #f8d7da, 0 0 12px #dc3545; }
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
-@keyframes slide-in {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-/* Disable ALL default animations first */
-::view-transition-old(*),
-::view-transition-new(*) {
-  animation: none;
-}
-
-/* Creates: only new exists - green flash */
-::view-transition-new(*):only-child {
+.flash-green {
   animation: flash-green 400ms ease-in-out;
+  position: relative;
+  z-index: 1;
 }
 
-/* Deletes: excluded by default in JS (looks awkward).
-   If you enable them, uncomment:
-::view-transition-old(*):only-child {
-  animation: flash-red 400ms ease-in-out;
-}
-*/
-
-/* Modifications: both exist - yellow highlight */
-::view-transition-old(*):not(:only-child) {
-  animation: none;
-  display: none;
-}
-
-::view-transition-new(*):not(:only-child) {
-  animation: flash-yellow 400ms ease-in-out;
-}
-
-/* Per-element animation classes (optional - override defaults above) */
-::view-transition-new(*.slide-in):only-child {
-  animation: slide-in 400ms ease-in-out;
-}
-
-::view-transition-new(*.fade-in):only-child {
-  animation: fade-in 400ms ease-in-out;
-}
-
-/* Disable root animations */
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation: none !important;
-  display: block !important;
-}
-
-/* Class-based flash animation for protected elements during broadcast refresh */
 .flash-yellow {
   animation: flash-yellow 400ms ease-in-out;
+  position: relative;
+  z-index: 1;
+}
+
+.fade-out {
+  animation: fade-out 300ms ease-out forwards;
 }
 ```
 
 ## Step 4: Mark Elements to Animate
 
-Add `data-view-transition-id` with a **unique, stable ID** to elements you want animated:
+Add data attributes to elements you want animated:
 
 ```erb
 <%# app/views/items/_item.html.erb %>
 <div id="<%= dom_id(item) %>"
-     data-view-transition-id="item-<%= item.id %>">
+     data-turbo-stream-refresh-id="<%= dom_id(item) %>"
+     data-turbo-stream-refresh-content="<%= [item.title, item.completed].join('|') %>"
+     data-turbo-stream-refresh-create-animation="flash-green"
+     data-turbo-stream-refresh-update-animation="flash-yellow"
+     data-turbo-stream-refresh-delete-animation="fade-out">
   <%= item.title %>
   <!-- ... -->
 </div>
 ```
 
-**Important**: The ID must be:
-- Unique across the page
-- Stable (same item always has same ID)
-- Valid CSS identifier (letters, numbers, hyphens, underscores)
-
-**Optional**: Add `data-view-transition-class` for per-element animation styles:
-
-```erb
-<%# Use slide-in instead of the default green flash %>
-<div data-view-transition-id="item-<%= item.id %>"
-     data-view-transition-class="slide-in">
-```
-
-This sets the CSS `view-transition-class` property, allowing you to target specific elements with `::view-transition-new(*.slide-in)` selectors.
+**Important**:
+- `data-turbo-stream-refresh-id` must be unique and stable
+- `data-turbo-stream-refresh-content` prevents false positives when comparing different views of the same data (e.g., item display vs edit form)
 
 ## Step 5: Protect Forms from Broadcast Morphs
 
-Add `data-turbo-stream-refresh-permanent` to forms that should be preserved when other users' changes arrive.
-
-For **edit forms**, also add `data-view-transition-animation-class` to flash when broadcasts arrive (signaling "data changed elsewhere"):
+Add `data-turbo-stream-refresh-permanent` to forms that should be preserved during broadcasts:
 
 ```erb
-<%# app/views/items/_edit_form.html.erb %>
-<div id="<%= dom_id(item) %>"
-     data-view-transition-id="item-<%= item.id %>"
-     data-turbo-stream-refresh-permanent
-     data-view-transition-animation-class="flash-yellow">
-  <%= form_with model: [item.list, item] do |f| %>
-    <%= f.text_field :title %>
-    <%= f.submit "Save" %>
-    <% if item.errors[:title].any? %>
-      <div class="error"><%= item.errors[:title].first %></div>
-    <% end %>
-  <% end %>
-</div>
-```
-
-For **new item forms**, protection is enough—no flash needed:
-
-```erb
-<%# app/views/items/_form.html.erb %>
+<%# app/views/items/_form.html.erb (new item form) %>
 <div id="new_item_form" data-turbo-stream-refresh-permanent>
   <%= form_with model: [list, item] do |f| %>
     <%= f.text_field :title %>
@@ -324,139 +246,105 @@ For **new item forms**, protection is enough—no flash needed:
 </div>
 ```
 
+```erb
+<%# app/views/items/_edit_form.html.erb %>
+<div id="<%= dom_id(item) %>"
+     data-turbo-stream-refresh-id="<%= dom_id(item) %>"
+     data-turbo-stream-refresh-content="<%= [item.title, item.completed].join('|') %>"
+     data-turbo-stream-refresh-permanent
+     data-turbo-stream-refresh-update-animation="flash-yellow">
+  <%= form_with model: [item.list, item] do |f| %>
+    <%= f.text_field :title %>
+    <%= f.submit "Save" %>
+  <% end %>
+</div>
+```
+
 ## Step 6: Controller Pattern
 
 ```ruby
 def create
   @item = @list.items.build(item_params)
   if @item.save
-    redirect_to @list, status: :see_other  # Form clears via redirect morph
+    redirect_to @list, status: :see_other
   else
     render turbo_stream: turbo_stream.replace(
       "new_item_form",
       partial: "items/form",
       locals: { list: @list, item: @item }
-    ), status: :unprocessable_entity  # Errors display inline
+    ), status: :unprocessable_entity
   end
+end
+
+def edit
+  render turbo_stream: turbo_stream.replace(
+    @item,
+    partial: "items/edit_form",
+    locals: { item: @item }
+  )
+end
+
+def update
+  if @item.update(item_params)
+    redirect_to @list, status: :see_other
+  else
+    render turbo_stream: turbo_stream.replace(
+      @item,
+      partial: "items/edit_form",
+      locals: { item: @item }
+    ), status: :unprocessable_entity
+  end
+end
+
+def destroy
+  @item.destroy
+  redirect_to @list, status: :see_other
 end
 ```
 
-**Key points:**
-- Use `status: :see_other` (303) for redirects after POST/PATCH/DELETE
-- Use `status: :unprocessable_entity` (422) for validation errors
-- Use `turbo_stream.replace` for error display (bypasses form protection)
-
 ## How It Works
 
-| Scenario | Animation | jQuery Equivalent |
-|----------|-----------|-------------------|
-| Element added | Green flash | `highlight()` with green |
-| Element removed | (excluded by default) | — |
-| Element modified | Yellow flash | `highlight()` |
+| Animation | Trigger | CSS Class |
+|-----------|---------|-----------|
+| Create | Element in new DOM but not old | `flash-green` |
+| Update | Element in both, content differs | `flash-yellow` |
+| Delete | Element in old DOM but not new | `fade-out` |
 
 | Scenario | Form Behavior |
 |----------|---------------|
-| User submits successfully | Redirect → form clears |
+| User submits successfully | Redirect → form clears normally |
 | User submits with errors | `turbo_stream.replace` → errors display |
 | Another user triggers refresh | Form protected → typing preserved |
-| Another user triggers refresh (edit form) | Form protected + yellow flash (signals "data changed") |
-
-## Customizing Animations
-
-The defaults match jQuery: 400ms, ease-in-out. Customize as needed:
-
-```css
-/* Slower animations (jQuery "slow" = 600ms) */
-::view-transition-new(*):only-child {
-  animation: flash-green 600ms ease-in-out;
-}
-
-/* Faster animations (jQuery "fast" = 200ms) */
-::view-transition-new(*):only-child {
-  animation: flash-green 200ms ease-in-out;
-}
-
-/* Different flash color (blue for creates) */
-@keyframes flash-blue {
-  0%, 100% { box-shadow: none; }
-  20% { box-shadow: 0 0 0 4px #cce5ff, 0 0 12px #007bff; }
-}
-
-/* Simple fade instead of flash */
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-::view-transition-new(*):only-child {
-  animation: fade-in 400ms ease-in-out;
-}
-```
-
-## Troubleshooting
-
-### All elements animate, not just changed ones
-- Make sure you're using `data-view-transition-id` (not inline `view-transition-name`)
-- Check that the JS is detecting changes (add `console.log` statements)
-
-### No animations at all
-- Verify browser supports View Transitions (`document.startViewTransition` exists)
-- Check browser console for errors
-- Ensure the `<meta name="view-transition">` tag is present
-
-### Form doesn't clear after submission
-- Verify controller uses `redirect_to` with `status: :see_other`
-- Check that form has `data-turbo-stream-refresh-permanent` (not `data-turbo-permanent`)
-
-### Form clears when OTHER users submit
-- Make sure the form wrapper has `data-turbo-stream-refresh-permanent`
-- Verify the full JS (form protection section) is included
-
-### Delete animation doesn't show
-- Deletes are **excluded by default** in the JS (they look awkward)
-- To enable: uncomment the delete detection code in the JS
-- Add `forwards` to the animation to hold final state
-
-### Highlight/background animation not visible
-- View Transition pseudo-elements contain **snapshot images** of elements
-- `background-color` animates behind the image (invisible)
-- Use `box-shadow` instead - it renders around the snapshot and is visible
-
-### Bootstrap btn-group buttons not grouped
-- `button_to` wraps buttons in `<form>` elements, breaking btn-group CSS
-- Use `link_to` with `data: { turbo_method: :delete }` instead
-- For GET links, add `data: { turbo_prefetch: false }` to prevent hover flash
-
-### Edit form doesn't flash on broadcast
-- Add `data-view-transition-animation-class="flash-yellow"` to the form wrapper
-- Element must also have `data-turbo-stream-refresh-permanent`
-- Add the `.flash-yellow` CSS class (or your custom animation class)
+| Another user modifies same item | Protected form flashes yellow |
 
 ## Quick Reference
 
 | Attribute | Purpose |
 |-----------|---------|
-| `data-view-transition-id="unique-id"` | Mark element for animation |
-| `data-view-transition-class="class"` | Per-element animation class (e.g., `slide-in`, `fade-in`) |
-| `data-turbo-stream-refresh-permanent` | Protect during broadcast refreshes only |
-| `data-view-transition-animation-class="class"` | CSS class to add on broadcast (for protected elements) |
-| `data-turbo-permanent` | Protect during ALL morphs (usually too broad) |
-| `data-turbo-prefetch="false"` | Disable Turbo's prefetch-on-hover |
-| `data-turbo-method="delete"` | Make link use DELETE method |
+| `data-turbo-stream-refresh-id` | Unique identifier for tracking |
+| `data-turbo-stream-refresh-content` | Content value for comparison (avoids false positives) |
+| `data-turbo-stream-refresh-permanent` | Protect during broadcast morphs |
+| `data-turbo-stream-refresh-create-animation` | CSS class for new elements |
+| `data-turbo-stream-refresh-update-animation` | CSS class for modified elements |
+| `data-turbo-stream-refresh-delete-animation` | CSS class for removed elements |
 
-| CSS Selector | Matches |
-|--------------|---------|
-| `::view-transition-new(*):only-child` | All created elements (default) |
-| `::view-transition-new(*.slide-in):only-child` | Created elements with `data-view-transition-class="slide-in"` |
-| `::view-transition-old(*):only-child` | Deleted elements (excluded by default in JS) |
-| `::view-transition-old(*):not(:only-child)` | Modified elements (old state) |
-| `::view-transition-new(*):not(:only-child)` | Modified elements (new state) |
+## Troubleshooting
 
-| jQuery Timing | CSS Equivalent |
-|---------------|----------------|
-| Default | `400ms` |
-| `'fast'` | `200ms` |
-| `'slow'` | `600ms` |
-| `'swing'` (default easing) | `ease-in-out` |
-| `'linear'` | `linear` |
-| Highlight color | `#ffff99` |
+### Form doesn't clear after submission
+- Verify controller uses `redirect_to` with `status: :see_other`
+- Ensure the form wrapper has a unique `id` attribute
+
+### Form clears when OTHER users submit
+- Add `data-turbo-stream-refresh-permanent` to the form wrapper
+- Ensure the wrapper has a unique `id`
+
+### Edit form flashes when new item added
+- Add `data-turbo-stream-refresh-content` to both item and edit form
+- Use the same content value (e.g., `item.title|item.completed`)
+
+### Delete animation doesn't show for submitter
+- The click handler uses capture phase - ensure it loads before Turbo
+- Check that the delete link has `data-turbo-method="delete"`
+
+### Animation clipped by sibling elements
+- Add `position: relative; z-index: 1;` to animation classes
