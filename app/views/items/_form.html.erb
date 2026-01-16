@@ -1,11 +1,13 @@
-<div id="new_item_form" data-turbo-permanent>
-  <%= form_with model: [list, item],
-                class: "mb-3",
-                data: { controller: "form", action: "turbo:submit-end->form#clear" } do |f| %>
-    <div class="input-group">
-      <%= f.text_field :title, class: "form-control", placeholder: "Add a new item...", data: { form_target: "input" } %>
+<div id="new_item_form" data-turbo-broadcast-refresh-permanent>
+  <%= form_with model: [list, item], class: "mb-3" do |f| %>
+    <div class="input-group flex-nowrap">
+      <%= f.text_field :title,
+                       class: "form-control #{'is-invalid' if item.errors[:title].any?}",
+                       placeholder: "Add a new item..." %>
       <%= f.submit "Add", class: "btn btn-primary" %>
     </div>
+    <% if item.errors[:title].any? %>
+      <div class="text-danger small"><%= item.errors[:title].first %></div>
+    <% end %>
   <% end %>
 </div>
-<div id="item_form_errors"></div>

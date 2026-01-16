@@ -313,7 +313,7 @@ Turbo's refresh mechanism includes **request-id tracking** to prevent the initia
 
 ---
 
-## Final Solution: Stimulus + data-turbo-permanent + Separate Error Container
+## Intermediate Solution: Stimulus + data-turbo-permanent + Separate Error Container
 
 After all these attempts, we arrived at a hybrid solution that cleanly separates concerns.
 
@@ -400,6 +400,162 @@ We can't use `turbo_stream.replace` on the form itself (blocked by `data-turbo-p
 
 ---
 
+## Step 7: The Quest for a Stimulus-Free Solution
+
+The Stimulus solution worked, but it felt like unnecessary complexity. We were using JavaScript to clear a form after submission—something that should "just work" with proper Turbo configuration. The core issue: `data-turbo-permanent` is too broad. It protects elements during *all* updates, but we only needed protection during *broadcast-triggered* morphs.
+
+### The Ideal Attribute
+
+What if we had `data-turbo-morph-permanent`—an attribute that:
+- **Protects** during morphs (broadcast refreshes)
+- **Allows** Turbo Stream actions (replace, update) to modify elements
+
+This would let us:
+1. Use `turbo_stream.replace` to clear the form on success
+2. Use `turbo_stream.replace` to show validation errors
+3. Still protect other clients' forms during broadcast morphs
+
+### Discovering turbo:before-morph-element
+
+Digging into the Turbo source, we found that morphs dispatch a cancelable `turbo:before-morph-element` event:
+
+```javascript
+// From turbo/src/core/morphing.js
+beforeNodeMorphed = (currentElement, newElement) => {
+  if (currentElement instanceof Element) {
+    if (!currentElement.hasAttribute("data-turbo-permanent") && ...) {
+      const event = dispatch("turbo:before-morph-element", {
+        cancelable: true,
+        target: currentElement,
+        detail: { currentElement, newElement }
+      })
+      return !event.defaultPrevented
+    }
+  }
+}
+```
+
+**Key insight**: We can listen for this event and call `preventDefault()` to block specific morphs—without modifying Turbo itself!
+
+Meanwhile, Turbo Stream actions (replace, update, etc.) go through a completely different code path (`Bardo` in `stream_message_renderer.js`) that only checks for `data-turbo-permanent`. They don't fire the morph event.
+
+### First Attempt: data-turbo-morph-permanent
+
+We implemented a simple event listener:
+
+```javascript
+document.addEventListener("turbo:before-morph-element", (event) => {
+  if (event.target.hasAttribute("data-turbo-morph-permanent")) {
+    event.preventDefault()
+  }
+})
+```
+
+And updated the form:
+
+```erb
+<div id="new_item_form" data-turbo-morph-permanent>
+  <%= form_with model: [list, item] do |f| %>
+    <!-- form fields with inline errors -->
+  <% end %>
+</div>
+```
+
+With the controller using `turbo_stream.replace` for both success and error cases.
+
+### The Problem
+
+It didn't work for the submitter. The form was protected during *all* morphs—including the morph triggered by following the redirect after form submission. We wanted:
+
+- **Broadcast morphs**: Protect the form (other users' typing preserved)
+- **Navigation morphs** (redirects): Allow the form to update (submitter sees cleared form)
+
+---
+
+## Final Solution: data-turbo-broadcast-refresh-permanent
+
+The solution: distinguish between morphs triggered by **broadcasts** versus morphs triggered by **navigation**.
+
+### The Key: turbo:before-stream-render
+
+When a broadcast message arrives, Turbo fires `turbo:before-stream-render` before processing it. Navigation-triggered morphs don't fire this event—they're just regular page loads that get morphed.
+
+```javascript
+// app/javascript/application.js
+
+// Track whether the current morph is triggered by a broadcast refresh.
+let inBroadcastRefresh = false
+
+document.addEventListener("turbo:before-stream-render", (event) => {
+  if (event.target.getAttribute("action") === "refresh") {
+    inBroadcastRefresh = true
+  }
+})
+
+document.addEventListener("turbo:before-morph-element", (event) => {
+  if (inBroadcastRefresh && event.target.hasAttribute("data-turbo-broadcast-refresh-permanent")) {
+    event.preventDefault()
+  }
+})
+
+document.addEventListener("turbo:render", () => {
+  inBroadcastRefresh = false
+})
+```
+
+### The Form
+
+```erb
+<%# app/views/items/_form.html.erb %>
+<div id="new_item_form" data-turbo-broadcast-refresh-permanent>
+  <%= form_with model: [list, item], class: "mb-3" do |f| %>
+    <div class="input-group flex-nowrap">
+      <%= f.text_field :title,
+                       class: "form-control #{'is-invalid' if item.errors[:title].any?}",
+                       placeholder: "Add a new item..." %>
+      <%= f.submit "Add", class: "btn btn-primary" %>
+    </div>
+    <% if item.errors[:title].any? %>
+      <div class="text-danger small"><%= item.errors[:title].first %></div>
+    <% end %>
+  <% end %>
+</div>
+```
+
+### The Controller
+
+```ruby
+def create
+  @item = @list.items.build(item_params)
+  if @item.save
+    redirect_to @list, status: :see_other
+  else
+    render turbo_stream: turbo_stream.replace(
+      "new_item_form",
+      partial: "items/form",
+      locals: { list: @list, item: @item }
+    ), status: :unprocessable_entity
+  end
+end
+```
+
+### Why This Works
+
+| Scenario | Event Flow | Form Behavior |
+|----------|------------|---------------|
+| **Submitter succeeds** | POST → redirect (303) → GET → navigation morph | `inBroadcastRefresh` is `false` → form morphs normally → clears |
+| **Submitter fails validation** | POST → 422 → `turbo_stream.replace` | Bardo only checks `data-turbo-permanent` → replacement works → shows errors |
+| **Other client adds item** | Broadcast refresh → `turbo:before-stream-render` → morph | `inBroadcastRefresh` is `true` → form protected → typing preserved |
+
+### Benefits Over the Stimulus Solution
+
+1. **No Stimulus controller needed** - Form clearing happens naturally through the redirect morph
+2. **Errors inside the form** - No separate error container; errors render inline with Bootstrap styling
+3. **Single partial** - The form partial handles both fresh and error states
+4. **Cleaner mental model** - Protection is scoped to exactly what we need: broadcast refreshes
+
+---
+
 ## Key Learnings
 
 ### 1. data-turbo-permanent is powerful but broad
@@ -409,31 +565,42 @@ It protects elements during:
 - Regular Turbo visits (redirects, link clicks)
 - Turbo Stream actions (replace, update, etc.)
 
-There's no built-in way to say "protect during morphs but not during stream actions."
+There's no built-in way to say "protect during morphs but not during stream actions"—but you can build one with Turbo's events.
 
 ### 2. Turbo's request-id prevents duplicate processing
 
 Broadcasts include a `request-id` that matches the initiating request. This prevents the submitting client from processing their own broadcast (avoiding double updates). But it also means you can't rely solely on broadcasts to update the initiating client—they need their own update path (typically a redirect). In practice: the broadcast updates *other* clients, the redirect updates *the submitter*.
 
-### 3. The turbo:submit-end event is your friend
+### 3. Turbo's events let you extend its behavior
 
-This event fires after a form submission completes, with `event.detail.success` indicating whether the response was successful. It's the perfect hook for client-side form handling that needs to differ between success and failure.
+Key events for customization:
+- `turbo:before-stream-render` - Fires before processing stream messages (broadcasts). Use it to detect broadcast-triggered updates.
+- `turbo:before-morph-element` - Cancelable event fired before each element is morphed. Call `preventDefault()` to protect specific elements.
+- `turbo:render` - Fires after rendering completes. Good for cleanup.
 
-### 4. Separate concerns with multiple containers
+By combining these events, you can implement custom preservation logic that Turbo doesn't provide out of the box.
 
-When you need different update behaviors for different parts of a form:
-- Put the part that should be protected in a `data-turbo-permanent` container
-- Put updateable parts (errors, dynamic content) in separate containers outside
+### 4. Morphs and Turbo Streams use different code paths
 
-### 5. Sometimes a little Stimulus is the right answer
+Understanding Turbo's internals helps:
+- **Morphs** (page refreshes, broadcast refreshes) use `morphing.js` and fire `turbo:before-morph-element`
+- **Turbo Streams** (replace, update, append, etc.) use `stream_message_renderer.js` and `Bardo`
 
-We initially tried to avoid Stimulus entirely, preferring pure Turbo Stream solutions. But a 14-line Stimulus controller elegantly solved what was becoming increasingly complex with pure Turbo. The right tool for the job.
+This separation is what makes `data-turbo-broadcast-refresh-permanent` possible—we can intercept morphs without affecting stream actions.
 
-### 6. Status codes matter with Turbo
+### 5. Status codes matter with Turbo
 
 Always use:
 - `status: :unprocessable_entity` (422) for validation errors
 - `status: :see_other` (303) for redirects after non-GET requests
+
+### 6. Name custom attributes descriptively
+
+We evolved through several names:
+- `data-turbo-morph-permanent` - Too vague; suggested protection during all morphs
+- `data-turbo-broadcast-refresh-permanent` - Precisely describes when protection applies
+
+Clear naming prevents confusion and makes the behavior self-documenting.
 
 ---
 
@@ -441,12 +608,11 @@ Always use:
 
 For reference, here are the key files in our final implementation:
 
-- `app/models/item.rb` - broadcasts_refreshes_to
-- `app/controllers/items_controller.rb` - redirect on success, turbo_stream on error
-- `app/views/items/_form.html.erb` - data-turbo-permanent + Stimulus
-- `app/views/items/_errors.html.erb` - error display
-- `app/views/items/_item.html.erb` - view-transition-name
-- `app/javascript/controllers/form_controller.js` - clear on success
+- `app/models/item.rb` - `broadcasts_refreshes_to :list` and validation
+- `app/controllers/items_controller.rb` - redirect on success, `turbo_stream.replace` on error
+- `app/views/items/_form.html.erb` - `data-turbo-broadcast-refresh-permanent` with inline errors
+- `app/views/items/_item.html.erb` - `view-transition-name` for animations
+- `app/javascript/application.js` - Custom event listeners for broadcast-only protection
 - `app/assets/stylesheets/application.css` - View Transition animations
 
 ---

@@ -8,10 +8,10 @@ class ItemsController < ApplicationController
     if @item.save
       redirect_to @list, status: :see_other
     else
-      render turbo_stream: turbo_stream.update(
-        "item_form_errors",
-        partial: "items/errors",
-        locals: { item: @item }
+      render turbo_stream: turbo_stream.replace(
+        "new_item_form",
+        partial: "items/form",
+        locals: { list: @list, item: @item }
       ), status: :unprocessable_entity
     end
   end
