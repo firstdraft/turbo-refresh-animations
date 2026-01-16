@@ -1095,7 +1095,73 @@ Other properties that work on View Transition pseudo-elements:
 - `filter` - applies effects like `brightness()` or `blur()` to the snapshot
 - `box-shadow` / `outline` - renders around the snapshot
 
-### 9. Bootstrap btn-group requires direct button children
+### 9. Flashing protected elements on broadcasts
+
+When a protected form (with `data-turbo-stream-refresh-permanent`) doesn't morph during a broadcast, users may not realize data changed elsewhere. Adding a visual flash to these elements signals "something updated."
+
+**The implementation:**
+
+1. Listen for `turbo:before-stream-render` with `action="refresh"`
+2. Find all elements with both `data-turbo-stream-refresh-permanent` AND `data-view-transition-animation-class`
+3. Add the specified CSS class to trigger the animation
+4. Remove the class on `animationend`
+
+**The submitter problem:** When you submit a form, your own broadcast arrives shortly after. Without special handling, your protected form would flash even though you just caused the change.
+
+**The solution:** Track a `recentlySubmitted` flag that persists through the redirect. Set it on `turbo:submit-start`, clear it with a 500ms delay after `turbo:render`. Skip the broadcast flash if this flag is true.
+
+```javascript
+let recentlySubmitted = false
+
+document.addEventListener("turbo:submit-start", () => {
+  recentlySubmitted = true
+})
+
+document.addEventListener("turbo:before-stream-render", (event) => {
+  if (event.target.getAttribute("action") === "refresh") {
+    // Flash protected elements to signal "data changed elsewhere"
+    // Skip if we just submitted (we'll see the item flash via View Transitions instead)
+    if (!recentlySubmitted) {
+      document.querySelectorAll('[data-turbo-stream-refresh-permanent][data-view-transition-animation-class]').forEach(el => {
+        const animationClass = el.dataset.viewTransitionAnimationClass
+        el.classList.add(animationClass)
+        el.addEventListener("animationend", () => el.classList.remove(animationClass), { once: true })
+      })
+    }
+  }
+})
+
+document.addEventListener("turbo:render", () => {
+  // Delay clearing recentlySubmitted so we still skip the broadcast flash
+  // that arrives shortly after our own submission
+  setTimeout(() => { recentlySubmitted = false }, 500)
+})
+```
+
+**The markup:**
+
+```erb
+<%# Only edit forms get the animation class - new forms don't need to flash %>
+<div id="<%= dom_id(item) %>"
+     data-turbo-stream-refresh-permanent
+     data-view-transition-animation-class="flash-yellow">
+  <%= form_with model: item do |f| %>
+    <!-- ... -->
+  <% end %>
+</div>
+```
+
+**The CSS:**
+
+```css
+.flash-yellow {
+  animation: flash-yellow 400ms ease-in-out;
+}
+```
+
+This approach is generic—the animation class is specified via data attribute, not hardcoded in JavaScript.
+
+### 10. Bootstrap btn-group requires direct button children
 
 When using Bootstrap's `btn-group` for action buttons, Rails' `button_to` helper won't work because it wraps buttons in `<form>` elements:
 

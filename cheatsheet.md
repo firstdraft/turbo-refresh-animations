@@ -27,9 +27,11 @@ Add to `app/javascript/application.js`:
 let inStreamRefresh = false
 let expectingRefreshVisit = false
 let userNavigationPending = false
+let recentlySubmitted = false  // Track if we just submitted (persists through redirect)
 
 document.addEventListener("turbo:submit-start", () => {
   userNavigationPending = true
+  recentlySubmitted = true
 })
 
 document.addEventListener("turbo:submit-end", (event) => {
@@ -46,6 +48,16 @@ document.addEventListener("turbo:before-stream-render", (event) => {
   if (event.target.getAttribute("action") === "refresh") {
     inStreamRefresh = true
     expectingRefreshVisit = true
+
+    // Flash protected elements to signal "data changed elsewhere"
+    // Skip if we just submitted (we'll see the item flash via View Transitions instead)
+    if (!recentlySubmitted) {
+      document.querySelectorAll('[data-turbo-stream-refresh-permanent][data-view-transition-animation-class]').forEach(el => {
+        const animationClass = el.dataset.viewTransitionAnimationClass
+        el.classList.add(animationClass)
+        el.addEventListener("animationend", () => el.classList.remove(animationClass), { once: true })
+      })
+    }
   }
 })
 
@@ -70,6 +82,9 @@ document.addEventListener("turbo:visit", () => {
 document.addEventListener("turbo:render", () => {
   inStreamRefresh = false
   userNavigationPending = false
+  // Delay clearing recentlySubmitted so we still skip the broadcast flash
+  // that arrives shortly after our own submission
+  setTimeout(() => { recentlySubmitted = false }, 500)
 })
 
 // ========== VIEW TRANSITIONS ==========
@@ -207,6 +222,11 @@ Add to your stylesheet:
   animation: none !important;
   display: block !important;
 }
+
+/* Class-based flash animation for protected elements during broadcast refresh */
+.flash-yellow {
+  animation: flash-yellow 400ms ease-in-out;
+}
 ```
 
 ## Step 4: Mark Elements to Animate
@@ -229,7 +249,27 @@ Add `data-view-transition-id` with a **unique, stable ID** to elements you want 
 
 ## Step 5: Protect Forms from Broadcast Morphs
 
-Add `data-turbo-stream-refresh-permanent` to forms that should be preserved when other users' changes arrive:
+Add `data-turbo-stream-refresh-permanent` to forms that should be preserved when other users' changes arrive.
+
+For **edit forms**, also add `data-view-transition-animation-class` to flash when broadcasts arrive (signaling "data changed elsewhere"):
+
+```erb
+<%# app/views/items/_edit_form.html.erb %>
+<div id="<%= dom_id(item) %>"
+     data-view-transition-id="item-<%= item.id %>"
+     data-turbo-stream-refresh-permanent
+     data-view-transition-animation-class="flash-yellow">
+  <%= form_with model: [item.list, item] do |f| %>
+    <%= f.text_field :title %>
+    <%= f.submit "Save" %>
+    <% if item.errors[:title].any? %>
+      <div class="error"><%= item.errors[:title].first %></div>
+    <% end %>
+  <% end %>
+</div>
+```
+
+For **new item forms**, protection is enough—no flash needed:
 
 ```erb
 <%# app/views/items/_form.html.erb %>
@@ -279,6 +319,7 @@ end
 | User submits successfully | Redirect → form clears |
 | User submits with errors | `turbo_stream.replace` → errors display |
 | Another user triggers refresh | Form protected → typing preserved |
+| Another user triggers refresh (edit form) | Form protected + yellow flash (signals "data changed") |
 
 ## Customizing Animations
 
@@ -346,12 +387,18 @@ The defaults match jQuery: 400ms, ease-in-out. Customize as needed:
 - Use `link_to` with `data: { turbo_method: :delete }` instead
 - For GET links, add `data: { turbo_prefetch: false }` to prevent hover flash
 
+### Edit form doesn't flash on broadcast
+- Add `data-view-transition-animation-class="flash-yellow"` to the form wrapper
+- Element must also have `data-turbo-stream-refresh-permanent`
+- Add the `.flash-yellow` CSS class (or your custom animation class)
+
 ## Quick Reference
 
 | Attribute | Purpose |
 |-----------|---------|
 | `data-view-transition-id="unique-id"` | Mark element for animation |
 | `data-turbo-stream-refresh-permanent` | Protect during broadcast refreshes only |
+| `data-view-transition-animation-class="class"` | CSS class to add on broadcast (for protected elements) |
 | `data-turbo-permanent` | Protect during ALL morphs (usually too broad) |
 | `data-turbo-prefetch="false"` | Disable Turbo's prefetch-on-hover |
 | `data-turbo-method="delete"` | Make link use DELETE method |
