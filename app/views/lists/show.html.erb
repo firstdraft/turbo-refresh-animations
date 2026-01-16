@@ -1,0 +1,24 @@
+<%= turbo_stream_from @list %>
+<div class="row">
+  <div class="col-md-8 mx-auto">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h1><%= @list.name %></h1>
+      <div>
+        <%= link_to "Edit", edit_list_path(@list), class: "btn btn-outline-secondary btn-sm me-2" %>
+        <%= link_to "Back", lists_path, class: "btn btn-outline-secondary btn-sm" %>
+      </div>
+    </div>
+
+    <%= render "items/form", list: @list, item: @item %>
+
+    <div class="list-group mt-4">
+      <% @list.items.order(created_at: :desc).each do |item| %>
+        <%= render "items/item", item: item %>
+      <% end %>
+    </div>
+
+    <% if @list.items.empty? %>
+      <p class="text-center text-muted py-4">No items yet. Add one above!</p>
+    <% end %>
+  </div>
+</div>

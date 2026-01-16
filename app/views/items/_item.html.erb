@@ -1,0 +1,20 @@
+<div class="list-group-item d-flex justify-content-between align-items-center"
+     style="view-transition-name: item-<%= item.id %>">
+  <div class="d-flex align-items-center gap-2 flex-grow-1">
+    <%= form_with model: [item.list, item], class: "d-inline" do |f| %>
+      <%= f.check_box :completed,
+                      class: "form-check-input",
+                      onchange: "this.form.requestSubmit()" %>
+    <% end %>
+    <span class="<%= 'item-completed' if item.completed? %>">
+      <%= item.title %>
+    </span>
+  </div>
+
+  <%= button_to list_item_path(item.list, item),
+                method: :delete,
+                class: "btn btn-outline-danger btn-sm",
+                form: { data: { turbo_confirm: "Delete this item?" } } do %>
+    &times;
+  <% end %>
+</div>

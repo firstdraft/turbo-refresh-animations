@@ -1,0 +1,24 @@
+<div class="row">
+  <div class="col-md-8 mx-auto">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h1>My Lists</h1>
+      <%= link_to "New List", new_list_path, class: "btn btn-primary" %>
+    </div>
+
+    <% if @lists.any? %>
+      <div class="list-group">
+        <% @lists.each do |list| %>
+          <%= link_to list_path(list), class: "list-group-item list-group-item-action d-flex justify-content-between align-items-center" do %>
+            <span><%= list.name %></span>
+            <span class="badge bg-secondary"><%= list.items.count %> items</span>
+          <% end %>
+        <% end %>
+      </div>
+    <% else %>
+      <div class="text-center text-muted py-5">
+        <p>You don't have any lists yet.</p>
+        <%= link_to "Create your first list", new_list_path, class: "btn btn-outline-primary" %>
+      </div>
+    <% end %>
+  </div>
+</div>
