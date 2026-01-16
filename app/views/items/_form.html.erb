@@ -1,5 +1,10 @@
 <div id="new_item_form" data-turbo-permanent>
-  <%= form_with model: [list, item], class: "mb-3" do |f| %>
+  <%= form_with model: [list, item],
+                class: "mb-3",
+                data: {
+                  controller: "reset-form",
+                  action: "turbo:submit-end->reset-form#reset"
+                } do |f| %>
     <div class="input-group">
       <%= f.text_field :title, class: "form-control", placeholder: "Add a new item..." %>
       <%= f.submit "Add", class: "btn btn-primary" %>
