@@ -104,12 +104,13 @@ document.addEventListener("turbo:before-render", (event) => {
     }
   })
 
-  // Deletes: in old but not new
-  oldMap.forEach((oldData, id) => {
-    if (!newMap.has(id)) {
-      toAnimate.push({ id, oldEl: oldData.element, newEl: null })
-    }
-  })
+  // Deletes: excluded by default (looks awkward - see journey.md)
+  // Uncomment to enable:
+  // oldMap.forEach((oldData, id) => {
+  //   if (!newMap.has(id)) {
+  //     toAnimate.push({ id, oldEl: oldData.element, newEl: null })
+  //   }
+  // })
 
   // Modifications: in both but textContent differs
   oldMap.forEach((oldData, id) => {
@@ -148,26 +149,28 @@ document.addEventListener("turbo:before-render", (event) => {
 
 Based on jQuery/jQuery UI defaults: **400ms** duration, **ease-in-out** (swing) easing, **#ffff99** highlight color.
 
+**Important**: Use `box-shadow` for flash effects—`background-color` doesn't work on View Transition pseudo-elements because they contain snapshot images.
+
 Add to your stylesheet:
 
 ```css
 /*
  * View Transitions animations
- * jQuery/jQuery UI defaults: 400ms, ease-in-out (swing), #ffff99 highlight
+ * Uses box-shadow for flash effects (background-color doesn't work on snapshots)
  */
-@keyframes slide-down {
-  from { max-height: 0; opacity: 0; overflow: hidden; }
-  to { max-height: 100px; opacity: 1; overflow: hidden; }
+@keyframes flash-green {
+  0%, 100% { box-shadow: none; }
+  20% { box-shadow: 0 0 0 4px #d4edda, 0 0 12px #28a745; }
 }
 
-@keyframes slide-up {
-  from { max-height: 100px; opacity: 1; overflow: hidden; }
-  to { max-height: 0; opacity: 0; overflow: hidden; }
-}
-
-@keyframes highlight {
+@keyframes flash-yellow {
   0%, 100% { box-shadow: none; }
   20% { box-shadow: 0 0 0 4px #ffff99, 0 0 12px #ffff99; }
+}
+
+@keyframes flash-red {
+  0%, 100% { box-shadow: none; }
+  20% { box-shadow: 0 0 0 4px #f8d7da, 0 0 12px #dc3545; }
 }
 
 /* Disable ALL default animations first */
@@ -176,24 +179,26 @@ Add to your stylesheet:
   animation: none;
 }
 
-/* Deletes: only old exists - slide up */
-::view-transition-old(*):only-child {
-  animation: slide-up 400ms ease-in-out forwards;
-}
-
-/* Creates: only new exists - slide down */
+/* Creates: only new exists - green flash */
 ::view-transition-new(*):only-child {
-  animation: slide-down 400ms ease-in-out;
+  animation: flash-green 400ms ease-in-out;
 }
 
-/* Modifications: both exist - highlight */
+/* Deletes: excluded by default in JS (looks awkward).
+   If you enable them, uncomment:
+::view-transition-old(*):only-child {
+  animation: flash-red 400ms ease-in-out;
+}
+*/
+
+/* Modifications: both exist - yellow highlight */
 ::view-transition-old(*):not(:only-child) {
   animation: none;
   display: none;
 }
 
 ::view-transition-new(*):not(:only-child) {
-  animation: highlight 400ms ease-in-out;
+  animation: flash-yellow 400ms ease-in-out;
 }
 
 /* Disable root animations */
@@ -265,8 +270,8 @@ end
 
 | Scenario | Animation | jQuery Equivalent |
 |----------|-----------|-------------------|
-| Element added | Expands down | `slideDown()` |
-| Element removed | Collapses up | `slideUp()` |
+| Element added | Green flash | `highlight()` with green |
+| Element removed | (excluded by default) | — |
 | Element modified | Yellow flash | `highlight()` |
 
 | Scenario | Form Behavior |
@@ -281,25 +286,29 @@ The defaults match jQuery: 400ms, ease-in-out. Customize as needed:
 
 ```css
 /* Slower animations (jQuery "slow" = 600ms) */
-::view-transition-old(*):only-child {
-  animation: slide-up 600ms ease-in-out forwards;
+::view-transition-new(*):only-child {
+  animation: flash-green 600ms ease-in-out;
 }
 
 /* Faster animations (jQuery "fast" = 200ms) */
 ::view-transition-new(*):only-child {
-  animation: slide-down 200ms ease-in-out;
+  animation: flash-green 200ms ease-in-out;
 }
 
-/* Different highlight color (Bootstrap success green) */
-@keyframes highlight {
+/* Different flash color (blue for creates) */
+@keyframes flash-blue {
   0%, 100% { box-shadow: none; }
-  20% { box-shadow: 0 0 0 4px #d4edda, 0 0 12px #d4edda; }
+  20% { box-shadow: 0 0 0 4px #cce5ff, 0 0 12px #007bff; }
 }
 
-/* Simple fade instead of slide */
+/* Simple fade instead of flash */
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+::view-transition-new(*):only-child {
+  animation: fade-in 400ms ease-in-out;
 }
 ```
 
@@ -323,13 +332,19 @@ The defaults match jQuery: 400ms, ease-in-out. Customize as needed:
 - Verify the full JS (form protection section) is included
 
 ### Delete animation doesn't show
+- Deletes are **excluded by default** in the JS (they look awkward)
+- To enable: uncomment the delete detection code in the JS
 - Add `forwards` to the animation to hold final state
-- Check that the element is actually being removed (not just hidden)
 
 ### Highlight/background animation not visible
 - View Transition pseudo-elements contain **snapshot images** of elements
 - `background-color` animates behind the image (invisible)
 - Use `box-shadow` instead - it renders around the snapshot and is visible
+
+### Bootstrap btn-group buttons not grouped
+- `button_to` wraps buttons in `<form>` elements, breaking btn-group CSS
+- Use `link_to` with `data: { turbo_method: :delete }` instead
+- For GET links, add `data: { turbo_prefetch: false }` to prevent hover flash
 
 ## Quick Reference
 
@@ -338,11 +353,13 @@ The defaults match jQuery: 400ms, ease-in-out. Customize as needed:
 | `data-view-transition-id="unique-id"` | Mark element for animation |
 | `data-turbo-stream-refresh-permanent` | Protect during broadcast refreshes only |
 | `data-turbo-permanent` | Protect during ALL morphs (usually too broad) |
+| `data-turbo-prefetch="false"` | Disable Turbo's prefetch-on-hover |
+| `data-turbo-method="delete"` | Make link use DELETE method |
 
 | CSS Selector | Matches |
 |--------------|---------|
-| `::view-transition-old(*):only-child` | Deleted elements |
 | `::view-transition-new(*):only-child` | Created elements |
+| `::view-transition-old(*):only-child` | Deleted elements (excluded by default in JS) |
 | `::view-transition-old(*):not(:only-child)` | Modified elements (old state) |
 | `::view-transition-new(*):not(:only-child)` | Modified elements (new state) |
 

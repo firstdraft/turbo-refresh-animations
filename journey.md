@@ -155,7 +155,7 @@ The `view-transition-name` property tells the browser to track specific elements
 
 - **When an item is deleted**: The element with `view-transition-name: item-5` exists in the old state but not the new → `::view-transition-old(item-5)` triggers the exit animation
 - **When an item is created**: The element exists in the new state but not the old → `::view-transition-new(item-6)` triggers the enter animation
-- The `item-*` wildcard selector matches any view-transition-name starting with "item-"
+- The `item-*` wildcard selector *appears* to match any view-transition-name starting with "item-" (but see below—this doesn't actually work)
 - The `:only-child` pseudo-class ensures animations only run for elements that are purely entering or exiting (not both)
 
 ### What About Modifications?
@@ -930,7 +930,7 @@ document.addEventListener("turbo:before-render", (event) => {
     })
   })
 
-  // Detect creates, deletes, and modifications
+  // Detect creates and modifications (deletes excluded by default)
   const toAnimate = []
 
   // Creates: in new but not old
@@ -940,12 +940,14 @@ document.addEventListener("turbo:before-render", (event) => {
     }
   })
 
-  // Deletes: in old but not new
-  oldMap.forEach((oldData, id) => {
-    if (!newMap.has(id)) {
-      toAnimate.push({ id, oldEl: oldData.element, newEl: null })
-    }
-  })
+  // Deletes: excluded because the DOM updates instantly while
+  // the old snapshot animates as a "ghost" over shifted content.
+  // Uncomment to enable delete animations anyway:
+  // oldMap.forEach((oldData, id) => {
+  //   if (!newMap.has(id)) {
+  //     toAnimate.push({ id, oldEl: oldData.element, newEl: null })
+  //   }
+  // })
 
   // Modifications: in both but textContent differs
   oldMap.forEach((oldData, id) => {
@@ -988,24 +990,37 @@ document.addEventListener("turbo:before-render", (event) => {
 
 #### CSS: Disable all, then opt-in
 
-Structure CSS to disable everything first, then enable specific animations:
+Structure CSS to disable everything first, then enable specific animations. We use flash effects (via `box-shadow`) rather than slide animations because delete animations look awkward—the DOM updates instantly while the old snapshot animates as a ghost over shifted content.
 
 ```css
+/* Flash animation keyframes (box-shadow, not background-color) */
+@keyframes flash-green {
+  0%, 100% { box-shadow: none; }
+  20% { box-shadow: 0 0 0 4px #d4edda, 0 0 12px #28a745; }
+}
+
+@keyframes flash-yellow {
+  0%, 100% { box-shadow: none; }
+  20% { box-shadow: 0 0 0 4px #ffff99, 0 0 12px #ffff99; }
+}
+
 /* Disable ALL default animations (prevents cross-fading) */
 ::view-transition-old(*),
 ::view-transition-new(*) {
   animation: none;
 }
 
-/* Deletes: only old exists - slide out */
-::view-transition-old(*):only-child {
-  animation: slide-out 0.4s ease-in-out forwards;
+/* Creates: only new exists - green flash */
+::view-transition-new(*):only-child {
+  animation: flash-green 400ms ease-in-out;
 }
 
-/* Creates: only new exists - slide in */
-::view-transition-new(*):only-child {
-  animation: slide-in 0.3s ease-out;
-}
+/* Deletes: excluded from View Transitions by default (see JS).
+   If you enable them, you could use:
+   ::view-transition-old(*):only-child {
+     animation: flash-red 400ms ease-in-out;
+   }
+*/
 
 /* Modifications: both exist - hide old, highlight new */
 ::view-transition-old(*):not(:only-child) {
@@ -1014,7 +1029,7 @@ Structure CSS to disable everything first, then enable specific animations:
 }
 
 ::view-transition-new(*):not(:only-child) {
-  animation: highlight 400ms ease-in-out;
+  animation: flash-yellow 400ms ease-in-out;
 }
 
 /* Root must have NO animation - override everything above */
@@ -1028,8 +1043,8 @@ Structure CSS to disable everything first, then enable specific animations:
 
 This is how we differentiate animation types:
 
-- **Deletes**: Only `::view-transition-old` exists (element removed) → `:only-child` matches
 - **Creates**: Only `::view-transition-new` exists (element added) → `:only-child` matches
+- **Deletes**: Only `::view-transition-old` exists (element removed) → `:only-child` matches (but deletes are excluded from JS by default due to awkward visuals)
 - **Modifications**: Both exist (element changed) → `:not(:only-child)` matches
 
 #### Using `data-view-transition-id` instead of inline styles
@@ -1080,6 +1095,35 @@ Other properties that work on View Transition pseudo-elements:
 - `filter` - applies effects like `brightness()` or `blur()` to the snapshot
 - `box-shadow` / `outline` - renders around the snapshot
 
+### 9. Bootstrap btn-group requires direct button children
+
+When using Bootstrap's `btn-group` for action buttons, Rails' `button_to` helper won't work because it wraps buttons in `<form>` elements:
+
+```html
+<!-- button_to generates this structure -->
+<div class="btn-group">
+  <form><button class="btn">Edit</button></form>
+  <form><button class="btn">Delete</button></form>
+</div>
+```
+
+Bootstrap's CSS uses selectors like `.btn-group > .btn` which require buttons to be direct children. The fix is to use `link_to` with `data-turbo-method`:
+
+```erb
+<div class="btn-group" role="group">
+  <%= link_to "Done", item_path(item, item: { completed: true }),
+              data: { turbo_method: :patch },
+              class: "btn btn-outline-secondary" %>
+  <%= link_to "Edit", edit_item_path(item),
+              class: "btn btn-outline-primary" %>
+  <%= link_to "Delete", item_path(item),
+              data: { turbo_method: :delete },
+              class: "btn btn-outline-danger" %>
+</div>
+```
+
+Note: For plain GET links like Edit, Turbo's prefetch-on-hover may cause a visual flash. Add `data: { turbo_prefetch: false }` to disable it.
+
 ---
 
 ## Complete File Listing
@@ -1090,7 +1134,7 @@ For reference, here are the key files in our final implementation:
 - `app/controllers/items_controller.rb` - redirect on success, `turbo_stream.replace` on error
 - `app/views/items/_form.html.erb` - `data-turbo-stream-refresh-permanent` with inline errors
 - `app/views/items/_edit_form.html.erb` - Edit form with same protection attribute
-- `app/views/items/_item.html.erb` - `view-transition-name` for animations
+- `app/views/items/_item.html.erb` - `data-view-transition-id` for animations, `btn-group` for actions
 - `app/javascript/application.js` - Custom event listeners for stream-refresh protection (see "Complete JavaScript Implementation" section above for the full code with all three flags)
 - `app/assets/stylesheets/application.css` - View Transition animations
 
