@@ -158,6 +158,39 @@ The `view-transition-name` property tells the browser to track specific elements
 - The `item-*` wildcard selector matches any view-transition-name starting with "item-"
 - The `:only-child` pseudo-class ensures animations only run for elements that are purely entering or exiting (not both)
 
+### What About Modifications?
+
+When an item is **modified** (edited), it exists in both old and new states. You might expect to animate modifications with `:not(:only-child)`:
+
+```css
+::view-transition-old(*.item):not(:only-child) {
+  display: none;
+}
+
+::view-transition-new(*.item):not(:only-child) {
+  animation: pop 0.3s ease-out;
+}
+```
+
+**However, this causes ALL items to animate, not just the modified one.**
+
+The issue: View Transitions creates pseudo-elements for **every** element with a `view-transition-name`, not just elements that changed. Since all unchanged items exist in both old and new states, they all have both `::view-transition-old` and `::view-transition-new` pseudo-elements. The `:not(:only-child)` selector matches all of them.
+
+We also tried `view-transition-class` (View Transitions Level 2), which lets you target elements by class instead of by name pattern:
+
+```erb
+<div style="view-transition-name: item-<%= item.id %>; view-transition-class: item">
+```
+
+```css
+::view-transition-old(*.item):only-child { ... }  /* Works for deletes */
+::view-transition-new(*.item):only-child { ... }  /* Works for creates */
+```
+
+This works identically to the `item-*` wildcard for creates/deletes, but has the same limitation for modifications.
+
+**Current status**: Creates and deletes animate beautifully. Modifications cannot be animated with CSS alone because there's no CSS selector that means "only the element whose content actually changed."
+
 ### Result
 
 Items now animate smoothly in and out! But we still have the form-clearing problem.
@@ -440,10 +473,10 @@ The solution: distinguish between morphs triggered by **stream-delivered refresh
 
 When a broadcast message arrives, Turbo fires `turbo:before-stream-render` before processing it. Navigation-triggered morphs don't fire this event—they're just regular page loads that get morphed.
 
-```javascript
-// app/javascript/application.js
+A simple implementation might look like:
 
-// Track whether the current morph is triggered by a stream-delivered refresh.
+```javascript
+// Simple but INCOMPLETE - see below for the full solution
 let inStreamRefresh = false
 
 document.addEventListener("turbo:before-stream-render", (event) => {
@@ -462,6 +495,8 @@ document.addEventListener("turbo:render", () => {
   inStreamRefresh = false
 })
 ```
+
+However, this simple approach has race condition issues that we'll address below.
 
 ### The Form
 
@@ -569,6 +604,159 @@ Now if User A is editing an item and User B adds a new item (triggering a broadc
 
 ---
 
+## The Complication: Refresh Actions Trigger Internal Visits
+
+The simple JavaScript above has a critical flaw. When debugging with console.log statements, we discovered an unexpected event sequence:
+
+```
+turbo:before-stream-render (refresh)  → inStreamRefresh = true
+turbo:visit                           → inStreamRefresh = false (reset too early!)
+turbo:before-morph-element            → inStreamRefresh is false, form NOT protected!
+```
+
+**The problem**: Turbo's `refresh` action internally triggers a `turbo:visit` to fetch fresh page content for morphing. Our simple listener reset `inStreamRefresh` on any visit, clearing the flag before the morphs even happened.
+
+### Distinguishing Refresh Visits from Navigation Visits
+
+We need to track whether a `turbo:visit` is:
+1. **User-initiated** (form submit redirect, link click) → should clear protection
+2. **Refresh-triggered** (internal visit from a refresh action) → should preserve protection
+
+The solution uses three flags:
+
+```javascript
+let inStreamRefresh = false
+let expectingRefreshVisit = false
+let userNavigationPending = false
+```
+
+- `inStreamRefresh`: Are we currently processing a stream-delivered refresh?
+- `expectingRefreshVisit`: Did we just receive a refresh action that will trigger a visit?
+- `userNavigationPending`: Did the user just initiate a navigation (form submit, link click)?
+
+### The Validation Error Edge Case
+
+There's another subtle bug: what happens when a user submits invalid data?
+
+1. `turbo:submit-start` fires → `userNavigationPending = true`
+2. Server returns `turbo_stream.replace` (422 status) — no redirect
+3. No `turbo:visit` fires, so `userNavigationPending` stays `true`
+4. Later, another client's broadcast arrives
+5. The `turbo:visit` handler (from the refresh) sees `userNavigationPending = true`
+6. It incorrectly thinks this is a user-initiated navigation and clears protection!
+
+**The fix**: Reset `userNavigationPending` when a form submission completes without a redirect.
+
+### Complete JavaScript Implementation
+
+```javascript
+// app/javascript/application.js
+import "@hotwired/turbo-rails"
+import "controllers"
+
+// Protect elements with data-turbo-stream-refresh-permanent during
+// stream-delivered refreshes only. Navigation-triggered morphs (like
+// following a redirect) are allowed through so forms clear after submission.
+let inStreamRefresh = false
+let expectingRefreshVisit = false
+let userNavigationPending = false
+
+// Track user-initiated navigations (form submits, link clicks)
+document.addEventListener("turbo:submit-start", () => {
+  userNavigationPending = true
+})
+
+document.addEventListener("turbo:submit-end", (event) => {
+  // If submission didn't result in a redirect (e.g., validation error),
+  // reset the pending flag since no navigation will follow
+  if (!event.detail.fetchResponse?.response?.redirected) {
+    userNavigationPending = false
+  }
+})
+
+document.addEventListener("turbo:click", () => {
+  userNavigationPending = true
+})
+
+document.addEventListener("turbo:before-stream-render", (event) => {
+  if (event.target.getAttribute("action") === "refresh") {
+    inStreamRefresh = true
+    expectingRefreshVisit = true
+  }
+})
+
+document.addEventListener("turbo:before-morph-element", (event) => {
+  if (inStreamRefresh && event.target.hasAttribute("data-turbo-stream-refresh-permanent")) {
+    event.preventDefault()
+  }
+})
+
+// Reset flag when navigation starts
+document.addEventListener("turbo:visit", () => {
+  if (userNavigationPending) {
+    // User-initiated navigation (redirect from form submit, link click)
+    inStreamRefresh = false
+    userNavigationPending = false
+    expectingRefreshVisit = false
+  } else if (expectingRefreshVisit) {
+    // Visit triggered by refresh action
+    expectingRefreshVisit = false
+  } else {
+    inStreamRefresh = false
+  }
+})
+
+document.addEventListener("turbo:render", () => {
+  inStreamRefresh = false
+  userNavigationPending = false
+})
+```
+
+### Event Flow Diagrams
+
+**Submitter succeeds (form clears correctly):**
+```
+turbo:submit-start           → userNavigationPending = true
+[POST to server]
+[Server redirects 303]
+turbo:submit-end             → redirected=true, flag stays true
+turbo:visit                  → userNavigationPending=true, so clear ALL flags
+turbo:before-morph-element   → inStreamRefresh=false, form morphs normally
+turbo:render                 → cleanup
+```
+
+**Submitter fails validation (form protected, shows errors):**
+```
+turbo:submit-start           → userNavigationPending = true
+[POST to server]
+[Server returns 422 + turbo_stream.replace]
+turbo:submit-end             → redirected=false, userNavigationPending = false
+[turbo_stream.replace runs]  → Bardo checks data-turbo-permanent only, replacement works
+```
+
+**Other client receives broadcast (form protected):**
+```
+[WebSocket delivers broadcast]
+turbo:before-stream-render   → inStreamRefresh=true, expectingRefreshVisit=true
+turbo:visit                  → userNavigationPending=false, expectingRefreshVisit=true
+                               so just clear expectingRefreshVisit
+turbo:before-morph-element   → inStreamRefresh=true, form PROTECTED
+turbo:render                 → cleanup
+```
+
+**Edge case: validation error, then broadcast arrives (form still protected):**
+```
+[After validation error, userNavigationPending was reset to false]
+[WebSocket delivers broadcast]
+turbo:before-stream-render   → inStreamRefresh=true, expectingRefreshVisit=true
+turbo:visit                  → userNavigationPending=false, so check expectingRefreshVisit
+                               expectingRefreshVisit=true, so just clear it
+turbo:before-morph-element   → inStreamRefresh=true, form PROTECTED ✓
+turbo:render                 → cleanup
+```
+
+---
+
 ## Appendix: Alternative Approach with request_id: nil
 
 After getting the `data-turbo-stream-refresh-permanent` solution working, we explored an alternative that bypasses the redirect entirely.
@@ -641,11 +829,22 @@ Broadcasts include a `request-id` that matches the initiating request. This prev
 Key events for customization:
 - `turbo:before-stream-render` - Fires before processing stream messages. Use it to detect stream-delivered updates.
 - `turbo:before-morph-element` - Cancelable event fired before each element is morphed. Call `preventDefault()` to protect specific elements.
+- `turbo:visit` - Fires when navigation starts, including internal visits triggered by refresh actions.
+- `turbo:submit-start` / `turbo:submit-end` - Bracket form submissions. `turbo:submit-end` includes `event.detail.fetchResponse.response.redirected` to detect redirects.
+- `turbo:click` - Fires when a Turbo-enabled link is clicked.
 - `turbo:render` - Fires after rendering completes. Good for cleanup.
 
 By combining these events, you can implement custom preservation logic that Turbo doesn't provide out of the box.
 
-### 4. Morphs and Turbo Streams use different code paths
+### 4. Refresh actions trigger internal visits
+
+This was a surprising discovery: when Turbo processes a `<turbo-stream action="refresh">`, it internally triggers a `turbo:visit` to fetch fresh content for morphing. This means any `turbo:visit` listener will fire for both:
+- User-initiated navigations (link clicks, form redirects)
+- System-initiated visits (from refresh actions)
+
+If you're tracking state across these events, you need to distinguish between them.
+
+### 5. Morphs and Turbo Streams use different code paths
 
 Understanding Turbo's internals helps:
 - **Morphs** (page refreshes, stream-delivered refreshes) use `morphing.js` and fire `turbo:before-morph-element`
@@ -653,19 +852,233 @@ Understanding Turbo's internals helps:
 
 This separation is what makes `data-turbo-stream-refresh-permanent` possible—we can intercept morphs without affecting stream actions.
 
-### 5. Status codes matter with Turbo
+### 6. Status codes matter with Turbo
 
 Always use:
 - `status: :unprocessable_entity` (422) for validation errors
 - `status: :see_other` (303) for redirects after non-GET requests
 
-### 6. Name custom attributes descriptively
+### 7. Name custom attributes descriptively
 
 We evolved through several names:
 - `data-turbo-morph-permanent` - Too vague; suggested protection during all morphs
 - `data-turbo-stream-refresh-permanent` - Precisely describes when protection applies
 
 Clear naming prevents confusion and makes the behavior self-documenting.
+
+### 8. View Transitions: The Full Solution
+
+After extensive experimentation, we discovered several key insights about View Transitions:
+
+#### Wildcard selectors don't work as expected
+
+The CSS selector `item-*` is **not** a glob pattern—it's interpreted literally as the name "item-*". Only `*` works as a universal selector:
+
+```css
+/* ✗ Does NOT match item-1, item-2, etc. */
+::view-transition-old(item-*) { ... }
+
+/* ✓ Matches ALL view-transition groups */
+::view-transition-old(*) { ... }
+```
+
+#### The `*` selector matches `root`
+
+By default, View Transitions captures the entire page as a group called `root`. The `*` selector matches this too, causing the whole page to animate. You must explicitly disable root:
+
+```css
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none !important;
+}
+```
+
+#### Timing is critical
+
+Setting `view-transition-name` in `turbo:before-render` doesn't work reliably because Turbo has already started its View Transition by the time this event fires. The "before" snapshot is captured without your styles.
+
+#### The solution: Take control of View Transitions
+
+The working approach:
+
+1. **Detect changes** using `textContent` comparison (generic, no app-specific selectors)
+2. **Prevent Turbo's default render** with `event.preventDefault()`
+3. **Set view-transition-name on OLD elements** before starting the transition
+4. **Call `document.startViewTransition()` ourselves**
+5. **Inside the callback**, set names on NEW elements and call `event.detail.resume()`
+6. **Clean up** after `transition.finished`
+
+```javascript
+document.addEventListener("turbo:before-render", (event) => {
+  if (!event.detail.newBody) return
+  if (!document.startViewTransition) return
+
+  // Build maps of elements with data-view-transition-id
+  const oldMap = new Map()
+  document.querySelectorAll('[data-view-transition-id]').forEach(el => {
+    oldMap.set(el.dataset.viewTransitionId, {
+      element: el,
+      text: el.textContent.trim()
+    })
+  })
+
+  const newMap = new Map()
+  event.detail.newBody.querySelectorAll('[data-view-transition-id]').forEach(el => {
+    newMap.set(el.dataset.viewTransitionId, {
+      element: el,
+      text: el.textContent.trim()
+    })
+  })
+
+  // Detect creates, deletes, and modifications
+  const toAnimate = []
+
+  // Creates: in new but not old
+  newMap.forEach((newData, id) => {
+    if (!oldMap.has(id)) {
+      toAnimate.push({ id, oldEl: null, newEl: newData.element })
+    }
+  })
+
+  // Deletes: in old but not new
+  oldMap.forEach((oldData, id) => {
+    if (!newMap.has(id)) {
+      toAnimate.push({ id, oldEl: oldData.element, newEl: null })
+    }
+  })
+
+  // Modifications: in both but textContent differs
+  oldMap.forEach((oldData, id) => {
+    if (newMap.has(id)) {
+      const newData = newMap.get(id)
+      if (oldData.text !== newData.text) {
+        toAnimate.push({ id, oldEl: oldData.element, newEl: newData.element })
+      }
+    }
+  })
+
+  if (toAnimate.length === 0) return
+
+  // Take control of the View Transition
+  event.preventDefault()
+
+  // Set view-transition-name on OLD elements BEFORE starting transition
+  toAnimate.forEach(({ id, oldEl }) => {
+    if (oldEl) oldEl.style.viewTransitionName = id
+  })
+
+  // Start View Transition ourselves
+  const transition = document.startViewTransition(() => {
+    // Set view-transition-name on NEW elements
+    toAnimate.forEach(({ id, newEl }) => {
+      if (newEl) newEl.style.viewTransitionName = id
+    })
+    // Resume Turbo's render
+    event.detail.resume()
+  })
+
+  // Clean up after transition
+  transition.finished.then(() => {
+    document.querySelectorAll('[data-view-transition-id]').forEach(el => {
+      el.style.viewTransitionName = ''
+    })
+  })
+})
+```
+
+#### CSS: Disable all, then opt-in
+
+Structure CSS to disable everything first, then enable specific animations:
+
+```css
+/* Disable ALL default animations (prevents cross-fading) */
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation: none;
+}
+
+/* Deletes: only old exists - slide out */
+::view-transition-old(*):only-child {
+  animation: slide-out 0.4s ease-in-out forwards;
+}
+
+/* Creates: only new exists - slide in */
+::view-transition-new(*):only-child {
+  animation: slide-in 0.3s ease-out;
+}
+
+/* Modifications: both exist - hide old, highlight new */
+::view-transition-old(*):not(:only-child) {
+  animation: none;
+  display: none;
+}
+
+::view-transition-new(*):not(:only-child) {
+  animation: highlight 400ms ease-in-out;
+}
+
+/* Root must have NO animation - override everything above */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none !important;
+}
+```
+
+#### The `:only-child` trick
+
+This is how we differentiate animation types:
+
+- **Deletes**: Only `::view-transition-old` exists (element removed) → `:only-child` matches
+- **Creates**: Only `::view-transition-new` exists (element added) → `:only-child` matches
+- **Modifications**: Both exist (element changed) → `:not(:only-child)` matches
+
+#### Using `data-view-transition-id` instead of inline styles
+
+Instead of hardcoding `view-transition-name` in partials (which would animate ALL elements), use a data attribute:
+
+```erb
+<div id="<%= dom_id(item) %>"
+     data-view-transition-id="item-<%= item.id %>">
+```
+
+JavaScript dynamically adds `view-transition-name` only to elements that actually changed, preventing unwanted animations on unchanged elements.
+
+#### Why textContent comparison works
+
+Using `textContent.trim()` for change detection is:
+- **Generic** - No app-specific selectors or column names
+- **Reliable** - Captures any visible text change (title edits, button state changes like "Done" → "Undo")
+- **Safe** - Ignores hidden inputs like CSRF tokens that change on every request
+
+#### Why `background-color` doesn't work for highlights
+
+A non-obvious gotcha: animating `background-color` on View Transition pseudo-elements doesn't produce visible results.
+
+**The reason**: `::view-transition-old` and `::view-transition-new` pseudo-elements contain **snapshot images** of the captured elements. When you animate `background-color`, you're changing the background *behind* the snapshot image—which is completely covered by the image itself.
+
+```css
+/* ✗ Won't be visible - background is behind the snapshot image */
+@keyframes highlight {
+  from { background-color: #ffff99; }
+  to { background-color: #fff; }
+}
+```
+
+**The solution**: Use `box-shadow` instead. It renders *around* the snapshot image and is fully visible:
+
+```css
+/* ✓ Visible - box-shadow renders around the snapshot */
+@keyframes highlight {
+  0%, 100% { box-shadow: none; }
+  20% { box-shadow: 0 0 0 4px #ffff99, 0 0 12px #ffff99; }
+}
+```
+
+Other properties that work on View Transition pseudo-elements:
+- `opacity` - fades the entire snapshot
+- `transform` - moves/scales/rotates the snapshot
+- `filter` - applies effects like `brightness()` or `blur()` to the snapshot
+- `box-shadow` / `outline` - renders around the snapshot
 
 ---
 
@@ -676,8 +1089,9 @@ For reference, here are the key files in our final implementation:
 - `app/models/item.rb` - `broadcasts_refreshes_to :list` and validation
 - `app/controllers/items_controller.rb` - redirect on success, `turbo_stream.replace` on error
 - `app/views/items/_form.html.erb` - `data-turbo-stream-refresh-permanent` with inline errors
+- `app/views/items/_edit_form.html.erb` - Edit form with same protection attribute
 - `app/views/items/_item.html.erb` - `view-transition-name` for animations
-- `app/javascript/application.js` - Custom event listeners for stream-refresh protection
+- `app/javascript/application.js` - Custom event listeners for stream-refresh protection (see "Complete JavaScript Implementation" section above for the full code with all three flags)
 - `app/assets/stylesheets/application.css` - View Transition animations
 
 ---
