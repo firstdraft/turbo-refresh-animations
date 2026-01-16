@@ -1058,6 +1058,33 @@ Instead of hardcoding `view-transition-name` in partials (which would animate AL
 
 JavaScript dynamically adds `view-transition-name` only to elements that actually changed, preventing unwanted animations on unchanged elements.
 
+#### Per-element animation classes with `data-view-transition-class`
+
+By default, all creates get the same animation (green flash) and all modifications get yellow flash. But what if you want different elements to animate differently?
+
+Use `data-view-transition-class` to specify a CSS `view-transition-class` for individual elements:
+
+```erb
+<div data-view-transition-id="item-<%= item.id %>"
+     data-view-transition-class="slide-in">
+```
+
+The JavaScript sets this as the `view-transition-class` CSS property, which you can target with `*.class-name` selectors:
+
+```css
+/* Default for all creates */
+::view-transition-new(*):only-child {
+  animation: flash-green 400ms ease-in-out;
+}
+
+/* Override for elements with data-view-transition-class="slide-in" */
+::view-transition-new(*.slide-in):only-child {
+  animation: slide-in 400ms ease-in-out;
+}
+```
+
+This uses View Transitions Level 2's `view-transition-class` feature, which became [Baseline Newly Available](https://web.dev/blog/same-document-view-transitions-are-now-baseline-newly-available) in October 2025 (Chrome 111+, Safari 18+, Firefox 144+).
+
 #### Why textContent comparison works
 
 Using `textContent.trim()` for change detection is:

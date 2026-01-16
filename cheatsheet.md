@@ -142,12 +142,22 @@ document.addEventListener("turbo:before-render", (event) => {
   event.preventDefault()
 
   toAnimate.forEach(({ id, oldEl }) => {
-    if (oldEl) oldEl.style.viewTransitionName = id
+    if (oldEl) {
+      oldEl.style.viewTransitionName = id
+      if (oldEl.dataset.viewTransitionClass) {
+        oldEl.style.viewTransitionClass = oldEl.dataset.viewTransitionClass
+      }
+    }
   })
 
   const transition = document.startViewTransition(() => {
     toAnimate.forEach(({ id, newEl }) => {
-      if (newEl) newEl.style.viewTransitionName = id
+      if (newEl) {
+        newEl.style.viewTransitionName = id
+        if (newEl.dataset.viewTransitionClass) {
+          newEl.style.viewTransitionClass = newEl.dataset.viewTransitionClass
+        }
+      }
     })
     event.detail.resume()
   })
@@ -155,6 +165,7 @@ document.addEventListener("turbo:before-render", (event) => {
   transition.finished.then(() => {
     document.querySelectorAll('[data-view-transition-id]').forEach(el => {
       el.style.viewTransitionName = ''
+      el.style.viewTransitionClass = ''
     })
   })
 })
@@ -188,6 +199,16 @@ Add to your stylesheet:
   20% { box-shadow: 0 0 0 4px #f8d7da, 0 0 12px #dc3545; }
 }
 
+@keyframes slide-in {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* Disable ALL default animations first */
 ::view-transition-old(*),
 ::view-transition-new(*) {
@@ -214,6 +235,15 @@ Add to your stylesheet:
 
 ::view-transition-new(*):not(:only-child) {
   animation: flash-yellow 400ms ease-in-out;
+}
+
+/* Per-element animation classes (optional - override defaults above) */
+::view-transition-new(*.slide-in):only-child {
+  animation: slide-in 400ms ease-in-out;
+}
+
+::view-transition-new(*.fade-in):only-child {
+  animation: fade-in 400ms ease-in-out;
 }
 
 /* Disable root animations */
@@ -246,6 +276,16 @@ Add `data-view-transition-id` with a **unique, stable ID** to elements you want 
 - Unique across the page
 - Stable (same item always has same ID)
 - Valid CSS identifier (letters, numbers, hyphens, underscores)
+
+**Optional**: Add `data-view-transition-class` for per-element animation styles:
+
+```erb
+<%# Use slide-in instead of the default green flash %>
+<div data-view-transition-id="item-<%= item.id %>"
+     data-view-transition-class="slide-in">
+```
+
+This sets the CSS `view-transition-class` property, allowing you to target specific elements with `::view-transition-new(*.slide-in)` selectors.
 
 ## Step 5: Protect Forms from Broadcast Morphs
 
@@ -397,6 +437,7 @@ The defaults match jQuery: 400ms, ease-in-out. Customize as needed:
 | Attribute | Purpose |
 |-----------|---------|
 | `data-view-transition-id="unique-id"` | Mark element for animation |
+| `data-view-transition-class="class"` | Per-element animation class (e.g., `slide-in`, `fade-in`) |
 | `data-turbo-stream-refresh-permanent` | Protect during broadcast refreshes only |
 | `data-view-transition-animation-class="class"` | CSS class to add on broadcast (for protected elements) |
 | `data-turbo-permanent` | Protect during ALL morphs (usually too broad) |
@@ -405,7 +446,8 @@ The defaults match jQuery: 400ms, ease-in-out. Customize as needed:
 
 | CSS Selector | Matches |
 |--------------|---------|
-| `::view-transition-new(*):only-child` | Created elements |
+| `::view-transition-new(*):only-child` | All created elements (default) |
+| `::view-transition-new(*.slide-in):only-child` | Created elements with `data-view-transition-class="slide-in"` |
 | `::view-transition-old(*):only-child` | Deleted elements (excluded by default in JS) |
 | `::view-transition-old(*):not(:only-child)` | Modified elements (old state) |
 | `::view-transition-new(*):not(:only-child)` | Modified elements (new state) |
