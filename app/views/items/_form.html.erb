@@ -1,9 +1,7 @@
 <div id="new_item_form" data-turbo-broadcast-refresh-permanent>
   <%= form_with model: [list, item], class: "mb-3" do |f| %>
-    <div class="input-group flex-nowrap">
-      <%= f.text_field :title,
-                       class: "form-control #{'is-invalid' if item.errors[:title].any?}",
-                       placeholder: "Add a new item..." %>
+    <div class="input-group">
+      <%= f.text_field :title, class: "form-control", placeholder: "Add a new item..." %>
       <%= f.submit "Add", class: "btn btn-primary" %>
     </div>
     <% if item.errors[:title].any? %>
