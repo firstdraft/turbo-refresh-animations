@@ -517,6 +517,58 @@ end
 
 ---
 
+## Appendix: Alternative Approach with request_id: nil
+
+After getting the `data-turbo-broadcast-refresh-permanent` solution working, we explored an alternative that bypasses the redirect entirely.
+
+### The Discovery: request_id: nil
+
+Turbo's `turbo_stream.refresh` accepts a `request_id` parameter:
+
+```ruby
+# From turbo-rails/app/models/turbo/streams/tag_builder.rb
+def refresh(request_id: Turbo.current_request_id, ...)
+```
+
+By default, it uses the current request's ID—which is why deduplication kicks in. But you can override it:
+
+```ruby
+turbo_stream.refresh(request_id: nil)
+```
+
+Setting `request_id: nil` means the refresh action has no request-id to match against, so the submitting client processes it instead of ignoring it.
+
+### The Alternative Controller
+
+```ruby
+def create
+  @item = @list.items.build(item_params)
+  if @item.save
+    render turbo_stream: [
+      turbo_stream.refresh(request_id: nil),
+      turbo_stream.replace("new_item_form", partial: "items/form", locals: { list: @list, item: @list.items.build })
+    ]
+  else
+    render turbo_stream: turbo_stream.replace(
+      "new_item_form",
+      partial: "items/form",
+      locals: { list: @list, item: @item }
+    ), status: :unprocessable_entity
+  end
+end
+```
+
+This works—the submitter receives the refresh and the form clears. However, we decided to stick with the redirect approach for a few reasons:
+
+1. **Simpler code** - The redirect is a single line vs. a multi-action Turbo Stream response
+2. **Standard Rails pattern** - Redirecting after successful form submission is conventional
+3. **Browser history** - The redirect updates the browser URL and history properly
+4. **Fewer moving parts** - Less custom code to maintain
+
+The `request_id: nil` trick is worth knowing about for cases where you specifically need to bypass deduplication, but for typical CRUD operations, redirects remain the cleaner choice.
+
+---
+
 ## Key Learnings
 
 ### 1. data-turbo-permanent is powerful but broad
