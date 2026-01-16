@@ -512,6 +512,61 @@ end
 3. **Single partial** - The form partial handles both fresh and error states
 4. **Cleaner mental model** - Protection is scoped to exactly what we need: stream-delivered refreshes
 
+### Protecting Edit Forms Too
+
+The same pattern works for inline edit forms. When a user clicks "Edit" on an item, we can swap the item display for an edit form using `turbo_stream.replace`:
+
+```ruby
+def edit
+  render turbo_stream: turbo_stream.replace(
+    @item,
+    partial: "items/edit_form",
+    locals: { item: @item }
+  )
+end
+
+def update
+  if @item.update(item_params)
+    redirect_to @list, status: :see_other
+  else
+    render turbo_stream: turbo_stream.replace(
+      @item,
+      partial: "items/edit_form",
+      locals: { item: @item }
+    ), status: :unprocessable_entity
+  end
+end
+```
+
+The edit form partial also needs `data-turbo-stream-refresh-permanent`:
+
+```erb
+<%# app/views/items/_edit_form.html.erb %>
+<div id="<%= dom_id(item) %>"
+     class="list-group-item"
+     style="view-transition-name: item-<%= item.id %>"
+     data-turbo-stream-refresh-permanent>
+  <%= form_with model: [item.list, item] do |f| %>
+    <div class="input-group">
+      <%= f.text_field :title, class: "form-control", autofocus: true %>
+      <%= f.submit "Save", class: "btn btn-primary" %>
+      <%= link_to "Cancel", list_path(item.list), class: "btn btn-outline-secondary" %>
+    </div>
+    <% if item.errors[:title].any? %>
+      <div class="text-danger small"><%= item.errors[:title].first %></div>
+    <% end %>
+  <% end %>
+</div>
+```
+
+Now if User A is editing an item and User B adds a new item (triggering a broadcast refresh), User A's edit form is preserved. The same scenarios apply:
+
+| Scenario | Form Behavior |
+|----------|---------------|
+| **User saves edit** | Redirect → navigation morph → edit form replaced with updated item |
+| **User's edit fails validation** | `turbo_stream.replace` works → shows errors inline |
+| **Another user triggers refresh** | `inStreamRefresh` is `true` → edit form protected |
+
 ---
 
 ## Appendix: Alternative Approach with request_id: nil
