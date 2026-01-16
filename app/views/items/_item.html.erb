@@ -11,10 +11,17 @@
     </span>
   </div>
 
-  <%= button_to list_item_path(item.list, item),
-                method: :delete,
-                class: "btn btn-outline-danger btn-sm",
-                form: { data: { turbo_confirm: "Delete this item?" } } do %>
-    &times;
-  <% end %>
+  <div class="btn-group btn-group-sm" role="group">
+    <%= link_to item.completed? ? "Undo" : "Done",
+                list_item_path(item.list, item, item: { completed: !item.completed? }),
+                data: { turbo_method: :patch },
+                class: "btn btn-outline-secondary" %>
+
+    <%= link_to "Edit", edit_list_item_path(item.list, item), class: "btn btn-outline-primary" %>
+
+    <%= link_to "Delete",
+                list_item_path(item.list, item),
+                data: { turbo_method: :delete, turbo_confirm: "Delete this item?" },
+                class: "btn btn-outline-danger" %>
+  </div>
 </div>
