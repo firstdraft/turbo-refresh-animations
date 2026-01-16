@@ -1,0 +1,5 @@
+<% if item.errors.any? %>
+  <div class="text-danger small" style="margin-top: -0.75rem;">
+    <%= item.errors.full_messages.to_sentence %>
+  </div>
+<% end %>

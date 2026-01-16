@@ -17,7 +17,7 @@ class ListsController < ApplicationController
   def create
     @list = current_user.lists.build(list_params)
     if @list.save
-      redirect_to @list, notice: "List created."
+      redirect_to @list, notice: "List created.", status: :see_other
     else
       render :new, status: :unprocessable_entity
     end
@@ -28,7 +28,7 @@ class ListsController < ApplicationController
 
   def update
     if @list.update(list_params)
-      redirect_to @list, notice: "List updated."
+      redirect_to @list, notice: "List updated.", status: :see_other
     else
       render :edit, status: :unprocessable_entity
     end
@@ -36,7 +36,7 @@ class ListsController < ApplicationController
 
   def destroy
     @list.destroy
-    redirect_to lists_path, notice: "List deleted."
+    redirect_to lists_path, notice: "List deleted.", status: :see_other
   end
 
   private

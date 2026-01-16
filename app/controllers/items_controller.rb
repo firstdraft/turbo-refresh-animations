@@ -6,20 +6,24 @@ class ItemsController < ApplicationController
   def create
     @item = @list.items.build(item_params)
     if @item.save
-      redirect_to @list
+      redirect_to @list, status: :see_other
     else
-      redirect_to @list, alert: "Could not add item."
+      render turbo_stream: turbo_stream.update(
+        "item_form_errors",
+        partial: "items/errors",
+        locals: { item: @item }
+      ), status: :unprocessable_entity
     end
   end
 
   def update
     @item.update(item_params)
-    redirect_to @list
+    redirect_to @list, status: :see_other
   end
 
   def destroy
     @item.destroy
-    redirect_to @list
+    redirect_to @list, status: :see_other
   end
 
   private
