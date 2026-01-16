@@ -14,7 +14,6 @@ Build a todo app where:
 ## The Tech Stack
 
 - **Rails 8.1** with Turbo (Hotwire)
-- **Devise** for authentication
 - **Bootstrap 5** for styling
 - **View Transitions API** for animations
 - **Action Cable** for WebSocket broadcasts
@@ -428,7 +427,7 @@ With the controller using `turbo_stream.replace` for both success and error case
 
 It didn't work for the submitter. The form was protected during *all* morphs—including the morph triggered by following the redirect after form submission. We wanted:
 
-- **Broadcast morphs**: Protect the form (other users' typing preserved)
+- **Stream-delivered refresh morphs**: Protect the form (other users' typing preserved)
 - **Navigation morphs** (redirects): Allow the form to update (submitter sees cleared form)
 
 ---
@@ -470,10 +469,8 @@ document.addEventListener("turbo:render", () => {
 <%# app/views/items/_form.html.erb %>
 <div id="new_item_form" data-turbo-stream-refresh-permanent>
   <%= form_with model: [list, item], class: "mb-3" do |f| %>
-    <div class="input-group flex-nowrap">
-      <%= f.text_field :title,
-                       class: "form-control #{'is-invalid' if item.errors[:title].any?}",
-                       placeholder: "Add a new item..." %>
+    <div class="input-group">
+      <%= f.text_field :title, class: "form-control", placeholder: "Add a new item..." %>
       <%= f.submit "Add", class: "btn btn-primary" %>
     </div>
     <% if item.errors[:title].any? %>
@@ -574,7 +571,7 @@ The `request_id: nil` trick is worth knowing about for cases where you specifica
 ### 1. data-turbo-permanent is powerful but broad
 
 It protects elements during:
-- Page morphs (broadcast refreshes)
+- Page morphs (including stream-delivered refreshes)
 - Regular Turbo visits (redirects, link clicks)
 - Turbo Stream actions (replace, update, etc.)
 
@@ -596,7 +593,7 @@ By combining these events, you can implement custom preservation logic that Turb
 ### 4. Morphs and Turbo Streams use different code paths
 
 Understanding Turbo's internals helps:
-- **Morphs** (page refreshes, broadcast refreshes) use `morphing.js` and fire `turbo:before-morph-element`
+- **Morphs** (page refreshes, stream-delivered refreshes) use `morphing.js` and fire `turbo:before-morph-element`
 - **Turbo Streams** (replace, update, append, etc.) use `stream_message_renderer.js` and `Bardo`
 
 This separation is what makes `data-turbo-stream-refresh-permanent` possible—we can intercept morphs without affecting stream actions.
