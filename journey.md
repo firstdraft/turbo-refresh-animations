@@ -119,35 +119,35 @@ document.addEventListener("turbo:before-render", (event) => {
 
   // Build maps of elements by their ID
   const oldMap = new Map()
-  document.querySelectorAll('[data-turbo-stream-refresh-id]').forEach(el => {
-    oldMap.set(el.dataset.turboStreamRefreshId, {
-      content: el.dataset.turboStreamRefreshContent || el.textContent.trim(),
+  document.querySelectorAll('[data-turbo-refresh-id]').forEach(el => {
+    oldMap.set(el.dataset.turboRefreshId, {
+      version: el.dataset.turboRefreshVersion,
       el: el
     })
   })
 
   const newMap = new Map()
-  event.detail.newBody.querySelectorAll('[data-turbo-stream-refresh-id]').forEach(el => {
-    newMap.set(el.dataset.turboStreamRefreshId, {
-      content: el.dataset.turboStreamRefreshContent || el.textContent.trim(),
-      createAnim: el.dataset.turboStreamRefreshCreateAnimation,
-      updateAnim: el.dataset.turboStreamRefreshUpdateAnimation
+  event.detail.newBody.querySelectorAll('[data-turbo-refresh-id]').forEach(el => {
+    newMap.set(el.dataset.turboRefreshId, {
+      version: el.dataset.turboRefreshVersion,
+      enterClass: el.dataset.turboRefreshEnterClass,
+      updateClass: el.dataset.turboRefreshUpdateClass
     })
   })
 
   // Creates: in new but not old
   newMap.forEach((newData, id) => {
-    if (!oldMap.has(id) && newData.createAnim) {
-      pendingAnimations.push({ id, animClass: newData.createAnim })
+    if (!oldMap.has(id) && newData.enterClass) {
+      pendingAnimations.push({ id, animClass: newData.enterClass })
     }
   })
 
-  // Modifications: in both but content differs
+  // Modifications: in both but version differs
   oldMap.forEach((oldData, id) => {
     if (newMap.has(id)) {
       const newData = newMap.get(id)
-      if (oldData.content !== newData.content && newData.updateAnim) {
-        pendingAnimations.push({ id, animClass: newData.updateAnim })
+      if (oldData.version && newData.version && oldData.version !== newData.version && newData.updateClass) {
+        pendingAnimations.push({ id, animClass: newData.updateClass })
       }
     }
   })
@@ -155,7 +155,7 @@ document.addEventListener("turbo:before-render", (event) => {
 
 document.addEventListener("turbo:render", () => {
   pendingAnimations.forEach(({ id, animClass }) => {
-    const el = document.querySelector(`[data-turbo-stream-refresh-id="${id}"]`)
+    const el = document.querySelector(`[data-turbo-refresh-id="${id}"]`)
     if (el) {
       el.classList.add(animClass)
       el.addEventListener("animationend", () => el.classList.remove(animClass), { once: true })
@@ -165,20 +165,15 @@ document.addEventListener("turbo:render", () => {
 })
 ```
 
-### The Content Comparison Problem
+### Version-Based Change Detection
 
-Initially we compared `textContent` to detect modifications. This caused a bug: when an edit form was open and a new item was added, the edit form would incorrectly flash yellow.
-
-**Why?** The edit form and item display have the same `data-turbo-stream-refresh-id`, but different `textContent` (the form has input fields, buttons, etc.). They're different views of the same data.
-
-**Solution**: Add `data-turbo-stream-refresh-content` with a normalized representation of the underlying data:
+We use `data-turbo-refresh-version` with the record's `updated_at` timestamp to detect actual modifications:
 
 ```erb
-<%# Both item and edit form use the same content value %>
-data-turbo-stream-refresh-content="<%= [item.title, item.completed].join('|') %>"
+data-turbo-refresh-version="<%= item.updated_at.to_i %>"
 ```
 
-Now modifications are only detected when the actual data changes, not when switching between views.
+This ensures update animations only trigger when the database record has actually been modified, avoiding false positives when switching between different views of the same data (item display vs edit form).
 
 ---
 
@@ -203,7 +198,7 @@ let submittingFormId = null
 
 document.addEventListener("turbo:submit-start", (event) => {
   const form = event.target
-  const wrapper = form.closest('[data-turbo-stream-refresh-permanent]')
+  const wrapper = form.closest('[data-turbo-refresh-permanent]')
   submittingFormId = wrapper?.id || null
 })
 
@@ -215,7 +210,7 @@ document.addEventListener("turbo:submit-end", (event) => {
 
 document.addEventListener("turbo:before-morph-element", (event) => {
   const el = event.target
-  if (el.hasAttribute("data-turbo-stream-refresh-permanent")) {
+  if (el.hasAttribute("data-turbo-refresh-permanent")) {
     if (el.id !== submittingFormId) {
       event.preventDefault()
     }
@@ -252,12 +247,12 @@ When a broadcast refresh arrives and an element is being deleted:
 ```javascript
 document.addEventListener("turbo:before-morph-element", (event) => {
   const el = event.target
-  const id = el.dataset?.turboStreamRefreshId
-  const deleteAnim = el.dataset?.turboStreamRefreshDeleteAnimation
+  const id = el.dataset?.turboRefreshId
+  const exitClass = el.dataset?.turboRefreshExitClass
 
-  if (id && deleteAnim && pendingDeletions.has(id)) {
+  if (id && exitClass && pendingDeletions.has(id)) {
     event.preventDefault()
-    el.classList.add(deleteAnim)
+    el.classList.add(exitClass)
     el.addEventListener("animationend", () => {
       el.remove()
       pendingDeletions.delete(id)
@@ -277,19 +272,19 @@ document.addEventListener("click", (event) => {
   const link = event.target.closest('a[data-turbo-method="delete"]')
   if (!link) return
 
-  const item = link.closest('[data-turbo-stream-refresh-delete-animation]')
+  const item = link.closest('[data-turbo-refresh-exit-class]')
   if (!item) return
 
   // Skip if animation already done (allow the real click through)
-  if (item.dataset.deleteAnimationDone) return
+  if (item.dataset.turboRefreshExitDone) return
 
   event.preventDefault()
   event.stopPropagation()
 
-  const animClass = item.dataset.turboStreamRefreshDeleteAnimation
+  const animClass = item.dataset.turboRefreshExitClass
   item.classList.add(animClass)
   item.addEventListener("animationend", () => {
-    item.dataset.deleteAnimationDone = "true"
+    item.dataset.turboRefreshExitDone = "true"
     link.click()  // Re-trigger the click
   }, { once: true })
 }, { capture: true })
@@ -315,17 +310,17 @@ Protected forms don't morph, so we can't queue animations for after render—the
 For protected elements that won't morph, apply the animation immediately:
 
 ```javascript
-// Modifications: in both but content differs
+// Modifications: in both but version differs
 oldMap.forEach((oldData, id) => {
   if (newMap.has(id)) {
     const newData = newMap.get(id)
-    if (oldData.content !== newData.content && newData.updateAnim) {
+    if (oldData.version && newData.version && oldData.version !== newData.version && newData.updateClass) {
       // Protected elements that won't morph: animate immediately
       if (oldData.isPermanent && oldData.el.id !== submittingFormId) {
-        applyAnimation(oldData.el, newData.updateAnim)
+        applyAnimation(oldData.el, newData.updateClass)
       } else {
         // Element will be morphed: queue for after render
-        pendingAnimations.push({ id, animClass: newData.updateAnim })
+        pendingAnimations.push({ id, animClass: newData.updateClass })
       }
     }
   }
@@ -344,9 +339,9 @@ We went from View Transitions API (complex, browser-dependent) to CSS class-base
 
 Instead of complex flag tracking (`inStreamRefresh`, `userNavigationPending`, etc.), simply track which form is being submitted. This makes the logic clear and eliminates race conditions.
 
-### 3. Content comparison needs normalization
+### 3. Version-based change detection
 
-Comparing `textContent` for change detection fails when the same data has different views (item display vs edit form). Use a dedicated `data-turbo-stream-refresh-content` attribute with normalized data.
+Use `data-turbo-refresh-version` with the record's `updated_at.to_i` timestamp. This is simpler than comparing content and correctly handles cases where the same data has different views (item display vs edit form).
 
 ### 4. Delete animations need special handling
 
@@ -359,7 +354,7 @@ When you need to intercept events before Turbo processes them, use `{ capture: t
 
 ### 6. data-turbo-permanent is too broad
 
-It protects during ALL morphs, including after form submission. Our custom `data-turbo-stream-refresh-permanent` gives finer control.
+It protects during ALL morphs, including after form submission. Our custom `data-turbo-refresh-permanent` gives finer control.
 
 ---
 
@@ -367,12 +362,12 @@ It protects during ALL morphs, including after form submission. Our custom `data
 
 | Attribute | Purpose |
 |-----------|---------|
-| `data-turbo-stream-refresh-id` | Unique identifier for tracking elements across morphs |
-| `data-turbo-stream-refresh-content` | Normalized content for comparison (avoids false positives) |
-| `data-turbo-stream-refresh-permanent` | Protect element during broadcast morphs (but allow submitter's form to morph) |
-| `data-turbo-stream-refresh-create-animation` | CSS class to apply when element is created |
-| `data-turbo-stream-refresh-update-animation` | CSS class to apply when element is modified |
-| `data-turbo-stream-refresh-delete-animation` | CSS class to apply when element is deleted |
+| `data-turbo-refresh-id` | Unique identifier for tracking elements across morphs |
+| `data-turbo-refresh-version` | Version for comparison (e.g., `updated_at.to_i`) |
+| `data-turbo-refresh-permanent` | Protect element during broadcast morphs (but allow submitter's form to morph) |
+| `data-turbo-refresh-enter-class` | CSS class to apply when element is created |
+| `data-turbo-refresh-update-class` | CSS class to apply when element is modified |
+| `data-turbo-refresh-exit-class` | CSS class to apply when element is deleted |
 
 ---
 
@@ -392,7 +387,7 @@ It protects during ALL morphs, including after form submission. Our custom `data
 
 - `app/models/item.rb` - `broadcasts_refreshes_to :list` and validation
 - `app/controllers/items_controller.rb` - redirect on success, `turbo_stream.replace` on error
-- `app/views/items/_form.html.erb` - New item form with `data-turbo-stream-refresh-permanent`
+- `app/views/items/_form.html.erb` - New item form with `data-turbo-refresh-permanent`
 - `app/views/items/_edit_form.html.erb` - Edit form with protection and animation attributes
 - `app/views/items/_item.html.erb` - Item display with all animation attributes
 - `app/javascript/application.js` - Form protection and animation logic

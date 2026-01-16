@@ -1,5 +1,10 @@
-<div class="list-group-item d-flex justify-content-between align-items-center"
-     style="view-transition-name: item-<%= item.id %>">
+<div id="<%= dom_id(item) %>"
+     class="list-group-item d-flex justify-content-between align-items-center"
+     data-turbo-refresh-id="<%= dom_id(item) %>"
+     data-turbo-refresh-version="<%= item.updated_at.to_i %>"
+     data-turbo-refresh-enter-class="flash-green"
+     data-turbo-refresh-update-class="flash-yellow"
+     data-turbo-refresh-exit-class="fade-out">
   <div class="d-flex align-items-center gap-2 flex-grow-1">
     <%= form_with model: [item.list, item], class: "d-inline" do |f| %>
       <%= f.check_box :completed,

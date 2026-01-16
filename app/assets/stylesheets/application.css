@@ -2,35 +2,36 @@
  * Application-wide styles
  */
 
-/* View Transitions animations for items */
-@keyframes slide-in {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* CSS class-based animations for Turbo Refresh */
+@keyframes flash-green {
+  0%, 100% { box-shadow: none; }
+  20% { box-shadow: 0 0 0 4px #d4edda, 0 0 12px #28a745; }
 }
 
-@keyframes slide-out {
-  from {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(10px);
-  }
+@keyframes flash-yellow {
+  0%, 100% { box-shadow: none; }
+  20% { box-shadow: 0 0 0 4px #ffff99, 0 0 12px #ffff99; }
 }
 
-::view-transition-old(item-*):only-child {
-  animation: slide-out 0.3s ease-out;
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
-::view-transition-new(item-*):only-child {
-  animation: slide-in 0.3s ease-out;
+.flash-green {
+  animation: flash-green 400ms ease-in-out;
+  position: relative;
+  z-index: 1;
+}
+
+.flash-yellow {
+  animation: flash-yellow 400ms ease-in-out;
+  position: relative;
+  z-index: 1;
+}
+
+.fade-out {
+  animation: fade-out 300ms ease-out forwards;
 }
 
 /* Completed item styling */
