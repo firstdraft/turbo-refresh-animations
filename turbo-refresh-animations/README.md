@@ -199,6 +199,8 @@ By default, `data-turbo-refresh-animate` enables all three animation types. Spec
 
 Options: `enter`, `exit`, `change`
 
+To explicitly disable animations on an element, use `data-turbo-refresh-animate="none"` (or `"false"`). This can be useful when a helper emits the attribute automatically.
+
 ### Define your own animations
 
 You can override the default classes or use custom class names per element.
@@ -295,7 +297,7 @@ Animations automatically reduce for users with `prefers-reduced-motion: reduce`.
 | Attribute | Purpose |
 |-----------|---------|
 | `id` | Element identifier (required) |
-| `data-turbo-refresh-animate` | Opt-in for animations (all types), or `="enter,exit,change"` for specific types |
+| `data-turbo-refresh-animate` | Opt-in for animations (`=""`/present enables all, `="enter,exit"` enables subset, `="none"` disables) |
 | `data-turbo-refresh-enter="class"` | Custom enter animation class |
 | `data-turbo-refresh-change="class"` | Custom change animation class |
 | `data-turbo-refresh-exit="class"` | Custom exit animation class |

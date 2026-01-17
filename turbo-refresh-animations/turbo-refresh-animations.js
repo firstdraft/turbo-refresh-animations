@@ -73,12 +73,26 @@ document.addEventListener("turbo:before-cache", () => {
 })
 
 function getAnimationClass(el, animType, defaultClass) {
-  // Check if animation type is enabled via data-turbo-refresh-animate value
-  // Empty value or no value = all enabled; comma-separated list = only those types
   const animateValue = el.getAttribute("data-turbo-refresh-animate")
-  if (animateValue !== null && animateValue !== "") {
-    const enabledTypes = animateValue.split(",").map(s => s.trim().toLowerCase())
-    if (!enabledTypes.includes(animType)) return null
+
+  // data-turbo-refresh-animate semantics:
+  // - Absent => disabled
+  // - "none"/"false" => disabled
+  // - "" (present but empty) => all enabled
+  // - Comma list containing any of enter/exit/change => only the recognized subset enabled
+  // - Any other value (including common Rails helper "true") => all enabled
+  if (animateValue === null) return null
+
+  const normalized = animateValue.trim().toLowerCase()
+  if (normalized === "none" || normalized === "false") return null
+
+  if (normalized !== "") {
+    const enabledTypes = animateValue
+      .split(",")
+      .map(s => s.trim().toLowerCase())
+      .filter(type => type === "enter" || type === "exit" || type === "change")
+
+    if (enabledTypes.length > 0 && !enabledTypes.includes(animType)) return null
   }
 
   // Check for custom class via data-turbo-refresh-{type}="my-class"
