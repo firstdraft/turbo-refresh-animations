@@ -5,8 +5,7 @@ CSS class-based animations for [Turbo](https://turbo.hotwired.dev/) page refresh
 **Features:**
 - Opt-in animations via `data-turbo-refresh-animate` attribute
 - Animate creates, updates, and deletes
-- Protect forms from being cleared during broadcast refreshes
-- Preserve user input during navigation
+- Protect elements (especially forms) from being morphed during broadcast refreshes
 - Customize animations via CSS classes
 - Works with importmaps, esbuild, webpack, or any bundler
 
@@ -75,11 +74,19 @@ The library uses a MutationObserver to detect actual DOM changes during Turbo mo
 | Update | Element content/attributes change | `turbo-refresh-update` |
 | Exit | Element removed from DOM | `turbo-refresh-exit` |
 
-## Form Protection
+## Protecting Elements During Broadcasts
 
-### Protect forms during broadcasts
+### `data-turbo-stream-refresh-permanent`
 
-When using `broadcasts_refreshes_to` for real-time updates, forms can get cleared when other users trigger refreshes. Protect forms with `data-turbo-stream-refresh-permanent`:
+When using `broadcasts_refreshes_to` for real-time updates, any element with this attribute will be protected from morphing during broadcast-triggered refreshes. This is useful for any element whose current DOM state you want to preserve when other users' actions trigger a page refresh.
+
+```erb
+<div id="my_element" data-turbo-stream-refresh-permanent>
+  <!-- This element won't be morphed during broadcasts -->
+</div>
+```
+
+**The most common use case is forms.** Without protection, a user typing in a form would lose their input whenever another user's action triggers a broadcast refresh:
 
 ```erb
 <div id="new_item_form" data-turbo-stream-refresh-permanent>
@@ -90,10 +97,13 @@ When using `broadcasts_refreshes_to` for real-time updates, forms can get cleare
 </div>
 ```
 
-**Behavior:**
-- During broadcast refreshes: Form is protected (not morphed)
-- After form submission: Form clears normally via redirect
-- During navigation with non-blank inputs: Form is preserved
+### Form-specific conveniences
+
+Since forms are the most common use case, the library includes special handling:
+
+1. **Submitter's form still clears**: When a user submits a form inside a protected element, that specific element is allowed to morph normally (so the form clears after submission via the redirect response). Other protected elements remain protected.
+
+2. **Non-blank inputs preserved during navigation**: Even during user-initiated navigation (not just broadcasts), elements with `data-turbo-stream-refresh-permanent` that contain non-blank form inputs will be protected. This preserves the user's work-in-progress if they accidentally navigate away.
 
 ### Flash protected elements on update
 
