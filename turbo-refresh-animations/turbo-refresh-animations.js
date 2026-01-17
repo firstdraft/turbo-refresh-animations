@@ -5,7 +5,7 @@ let lastRenderedUrl = window.location.href
 let pendingVisitUrl = null
 let pendingVisitAction = null
 let shouldAnimateAfterRender = false
-let protectedUpdates = new Set()
+let protectedUpdates = new Map()
 let signaturesBefore = new Map()
 const animationClassCleanupTimers = new WeakMap()
 
@@ -327,7 +327,9 @@ document.addEventListener("turbo:before-morph-element", (event) => {
       event.preventDefault()
 
       // Apply update animation if content changed (detected in turbo:before-render)
-      if (protectedUpdates.has(currentEl.id)) {
+      const newVersion = protectedUpdates.get(currentEl.id)
+      if (newVersion !== undefined) {
+        currentEl.setAttribute("data-turbo-refresh-version", newVersion)
         applyAnimation(currentEl, "turbo-refresh-change")
         protectedUpdates.delete(currentEl.id)
       }
@@ -351,7 +353,7 @@ document.addEventListener("turbo:before-morph-element", (event) => {
 document.addEventListener("turbo:before-render", async (event) => {
   if (!event.detail.newBody) return
 
-  protectedUpdates = new Set()
+  protectedUpdates = new Map()
   signaturesBefore = new Map()
 
   shouldAnimateAfterRender = isPageRefreshVisit()
@@ -410,7 +412,13 @@ document.addEventListener("turbo:before-render", async (event) => {
       const newVersion = newEl.getAttribute("data-turbo-refresh-version")
       if (newVersion === null) return
       if (oldVersion !== newVersion) {
-        protectedUpdates.add(el.id)
+        protectedUpdates.set(el.id, newVersion)
+        const isSubmitting = el.id === submittingPermanentId
+        const isVisiting = el.id === visitingPermanentId
+        if (!isSubmitting && !isVisiting) {
+          el.setAttribute("data-turbo-refresh-version", newVersion)
+          signaturesBefore.set(el.id, meaningfulUpdateSignature(el))
+        }
       }
     }
   })
@@ -441,6 +449,6 @@ document.addEventListener("turbo:render", () => {
   }
 
   shouldAnimateAfterRender = false
-  protectedUpdates = new Set()
+  protectedUpdates = new Map()
   signaturesBefore = new Map()
 })
