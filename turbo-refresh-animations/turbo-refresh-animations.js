@@ -1,24 +1,5 @@
-/**
- * Turbo Refresh Animations
- *
- * CSS class-based animations for Turbo page refresh morphs.
- * Animates elements on create, update, and delete.
- * Protects forms from being cleared during broadcast refreshes.
- *
- * Required data attributes:
- *   data-turbo-refresh-animate           - Opt-in element for animations
- *
- * Optional data attributes:
- *   data-turbo-stream-refresh-permanent  - Protect element during broadcast morphs
- *   data-turbo-refresh-version="value"   - Version for change detection (e.g., cache_key_with_version)
- *
- * Default animation classes (override in CSS):
- *   .turbo-refresh-enter  - Applied to new elements
- *   .turbo-refresh-update - Applied to modified elements
- *   .turbo-refresh-exit   - Applied to removed elements
- */
-
-// ========== STATE ==========
+// ========== TURBO REFRESH ANIMATIONS ==========
+// Animates elements during Turbo morphs using MutationObserver + Turbo events
 
 let hasRenderedCurrentPage = true
 let lastRenderedUrl = window.location.href
@@ -26,11 +7,13 @@ let observer = null
 let createdIds = new Set()
 let updatedIds = new Set()
 let protectedUpdates = new Map()
+
+// ========== FORM PROTECTION ==========
+// Protect elements with data-turbo-stream-refresh-permanent during stream-delivered
+// refreshes (broadcasts). During navigation, protect elements with non-blank inputs.
+
 let inStreamRefresh = false
 let submittingPermanentId = null
-
-// ========== STREAM REFRESH DETECTION ==========
-// Detect when a morph is triggered by a broadcast (Turbo Stream) vs navigation
 
 document.addEventListener("turbo:before-stream-render", (event) => {
   if (event.target.getAttribute("action") === "refresh") {
@@ -38,24 +21,16 @@ document.addEventListener("turbo:before-stream-render", (event) => {
   }
 })
 
-// ========== FORM SUBMISSION TRACKING ==========
-// Track which permanent element is being submitted so it can be morphed
-
 document.addEventListener("turbo:submit-start", (event) => {
   const wrapper = event.target.closest("[data-turbo-stream-refresh-permanent]")
   submittingPermanentId = wrapper?.id || null
 })
-
-// ========== PAGE NAVIGATION ==========
-// Track page changes to avoid animating existing elements on initial load
 
 document.addEventListener("turbo:visit", (event) => {
   if (event.detail.url !== lastRenderedUrl) {
     hasRenderedCurrentPage = false
   }
 })
-
-// ========== HELPER FUNCTIONS ==========
 
 function applyAnimation(el, animClass) {
   el.classList.add(animClass)
@@ -84,9 +59,7 @@ function hasNonBlankInputs(el) {
   return false
 }
 
-// ========== MORPH HANDLING ==========
-// Protect permanent elements and animate deletions
-
+// Handle morphing: protect permanent elements, animate deletes
 document.addEventListener("turbo:before-morph-element", (event) => {
   const currentEl = event.target
   const newEl = event.detail.newElement
@@ -104,14 +77,14 @@ document.addEventListener("turbo:before-morph-element", (event) => {
 
       // Apply update animation if content changed (detected in turbo:before-render)
       if (protectedUpdates.has(currentEl.id)) {
-        applyAnimation(currentEl, "turbo-refresh-update")
+        applyAnimation(currentEl, "turbo-refresh-change")
         protectedUpdates.delete(currentEl.id)
       }
       return
     }
   }
 
-  // Handle DELETES (newElement undefined means Idiomorph is removing this element)
+  // Handle DELETES (newElement undefined)
   if (!currentEl.id || !currentEl.hasAttribute("data-turbo-refresh-animate")) return
 
   if (newEl === undefined) {
@@ -123,21 +96,51 @@ document.addEventListener("turbo:before-morph-element", (event) => {
   }
 })
 
-// ========== CREATE & UPDATE DETECTION ==========
-// Use MutationObserver to detect what Idiomorph actually changes
-
-document.addEventListener("turbo:before-render", (event) => {
+// Before render: detect deletions and animate BEFORE morph
+document.addEventListener("turbo:before-render", async (event) => {
   if (!event.detail.newBody) return
 
   createdIds = new Set()
   updatedIds = new Set()
   protectedUpdates = new Map()
 
-  // Skip animation detection on initial page navigation
-  if (!hasRenderedCurrentPage) return
+  if (!hasRenderedCurrentPage) {
+    return
+  }
 
   const existingIds = new Set()
   document.querySelectorAll("[id]").forEach(el => existingIds.add(el.id))
+
+  // Detect elements that will be deleted
+  const newBodyIds = new Set()
+  event.detail.newBody.querySelectorAll("[id]").forEach(el => newBodyIds.add(el.id))
+
+  const deletions = []
+  document.querySelectorAll("[data-turbo-refresh-animate][id]").forEach(el => {
+    if (!newBodyIds.has(el.id)) {
+      deletions.push(el)
+    }
+  })
+
+  // If there are deletions, animate them BEFORE the morph
+  if (deletions.length > 0) {
+    event.preventDefault()
+
+    const animationPromises = deletions.map(el => {
+      return new Promise(resolve => {
+        el.classList.add("turbo-refresh-exit")
+        el.addEventListener("animationend", () => {
+          el.remove()
+          resolve()
+        }, { once: true })
+      })
+    })
+
+    await Promise.all(animationPromises)
+
+    // Now manually trigger the render
+    event.detail.resume()
+  }
 
   // Detect updates to protected elements (they won't morph, so MutationObserver won't see them)
   // Use data-turbo-refresh-version for comparison if present
@@ -147,7 +150,7 @@ document.addEventListener("turbo:before-render", (event) => {
       if (newEl) {
         const oldVersion = el.dataset.turboRefreshVersion
         const newVersion = newEl.dataset.turboRefreshVersion
-        if (newVersion && oldVersion !== newVersion) {
+        if (oldVersion !== newVersion) {
           protectedUpdates.set(el.id, true)
         }
       }
@@ -156,7 +159,6 @@ document.addEventListener("turbo:before-render", (event) => {
 
   observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
-      // Detect CREATES (new elements added)
       for (const node of mutation.addedNodes) {
         if (node.nodeType === 1) {
           if (node.id && node.hasAttribute("data-turbo-refresh-animate") && !existingIds.has(node.id)) {
@@ -170,7 +172,6 @@ document.addEventListener("turbo:before-render", (event) => {
         }
       }
 
-      // Detect UPDATES (attribute changes)
       if (mutation.type === "attributes") {
         if (mutation.attributeName === "class") continue
         const id = findClosestAnimatable(mutation.target)
@@ -179,7 +180,6 @@ document.addEventListener("turbo:before-render", (event) => {
         }
       }
 
-      // Detect UPDATES (text content changes)
       if (mutation.type === "characterData") {
         const id = findClosestAnimatable(mutation.target)
         if (id && existingIds.has(id) && !createdIds.has(id)) {
@@ -187,7 +187,6 @@ document.addEventListener("turbo:before-render", (event) => {
         }
       }
 
-      // Detect UPDATES (child element changes)
       if (mutation.type === "childList" && mutation.target.id && mutation.target.hasAttribute("data-turbo-refresh-animate")) {
         if (existingIds.has(mutation.target.id) && !createdIds.has(mutation.target.id)) {
           updatedIds.add(mutation.target.id)
@@ -206,8 +205,6 @@ document.addEventListener("turbo:before-render", (event) => {
   })
 })
 
-// ========== APPLY ANIMATIONS AFTER RENDER ==========
-
 document.addEventListener("turbo:render", () => {
   if (observer) {
     observer.disconnect()
@@ -219,7 +216,6 @@ document.addEventListener("turbo:render", () => {
   inStreamRefresh = false
   submittingPermanentId = null
 
-  // Apply CREATE animations
   createdIds.forEach(id => {
     const el = document.getElementById(id)
     if (el) {
@@ -227,11 +223,10 @@ document.addEventListener("turbo:render", () => {
     }
   })
 
-  // Apply UPDATE animations
   updatedIds.forEach(id => {
     const el = document.getElementById(id)
     if (el) {
-      applyAnimation(el, "turbo-refresh-update")
+      applyAnimation(el, "turbo-refresh-change")
     }
   })
 
