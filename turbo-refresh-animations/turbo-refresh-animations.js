@@ -1,6 +1,9 @@
 // ========== TURBO REFRESH ANIMATIONS ==========
 // Animates elements during Turbo page refresh morphs using Turbo events + before/after signatures
 
+if (!window.TurboRefreshAnimationsInstalled) {
+  window.TurboRefreshAnimationsInstalled = true
+
 let lastRenderedUrl = window.location.href
 let pendingVisitUrl = null
 let pendingVisitAction = null
@@ -452,3 +455,5 @@ document.addEventListener("turbo:render", () => {
   protectedUpdates = new Map()
   signaturesBefore = new Map()
 })
+
+}
