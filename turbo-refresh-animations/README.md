@@ -308,13 +308,13 @@ Use custom classes per element:
 
 ### Default animations
 
-The included CSS provides box-shadow glow effects:
+The included CSS provides box-shadow glow effects via `::after` pseudo-elements:
 
 - **Enter**: Green glow (`--turbo-refresh-enter-duration`, default 600ms)
 - **Change**: Yellow glow (`--turbo-refresh-change-duration`, default 600ms)
 - **Exit**: Red glow with fade out (`--turbo-refresh-exit-duration`, default 400ms)
 
-The defaults use `position: relative; z-index: 1;` to prevent box-shadow clipping.
+The `::after` overlay approach avoids overwriting the element's own `box-shadow` or `z-index`. Elements get `position: relative` so the overlay can position correctly. If your element already uses `::after`, consider using custom animation classes.
 
 Animations automatically reduce for users with `prefers-reduced-motion: reduce`.
 
