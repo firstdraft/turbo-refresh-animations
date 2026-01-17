@@ -1,12 +1,12 @@
 # Turbo Refresh Animations
 
-CSS class-based animations for [Turbo](https://turbo.hotwired.dev/) page refresh morphs. Animates elements when they're created, updated, or deleted during Turbo morphs.
+CSS class-based animations for [Turbo](https://turbo.hotwired.dev/) page refresh morphs. Animates elements when they're created, changed, or deleted during Turbo morphs.
 
 **Features:**
 - Opt-in animations via `data-turbo-refresh-animate` attribute
-- Animate creates, updates, and deletes
+- Animate creates, changes, and deletes
 - Protect elements (especially forms) from being morphed during broadcast refreshes
-- Customize animations via CSS classes
+- Customize animations via CSS classes or CSS variables
 - Works with importmaps, esbuild, webpack, or any bundler
 
 ## Installation
@@ -39,7 +39,13 @@ import "turbo-refresh-animations"
 
 ```css
 /* app/assets/stylesheets/application.css */
-@import "turbo-refresh-animations/style.css";
+@import "turbo-refresh-animations/turbo-refresh-animations.css";
+```
+
+Or with Rails asset pipeline, add to your layout:
+
+```erb
+<%= stylesheet_link_tag "turbo-refresh-animations" %>
 ```
 
 ### 3. Enable morphing in your layout
@@ -62,7 +68,7 @@ Add `data-turbo-refresh-animate` and an `id` to elements you want to animate:
 </div>
 ```
 
-Elements will animate when created, updated, or deleted during Turbo morphs.
+Elements will animate when created, changed, or deleted during Turbo morphs.
 
 ## How It Works
 
@@ -71,7 +77,7 @@ The library uses a MutationObserver to detect actual DOM changes during Turbo mo
 | Animation | Trigger | Default Class |
 |-----------|---------|---------------|
 | Enter | New element added to DOM | `turbo-refresh-enter` |
-| Update | Element content/attributes change | `turbo-refresh-update` |
+| Change | Element content/attributes change | `turbo-refresh-change` |
 | Exit | Element removed from DOM | `turbo-refresh-exit` |
 
 ## Protecting Elements During Broadcasts
@@ -121,9 +127,19 @@ To show a visual indicator when a protected element's underlying data changes (e
 </div>
 ```
 
-When the version changes during a broadcast, the element flashes with the update animation while keeping its current content protected.
+When the version changes during a broadcast, the element flashes with the change animation while keeping its current content protected.
 
 ## Customization
+
+### Override colors via CSS variables
+
+```css
+:root {
+  --turbo-refresh-enter-bg: #D1E7DD;  /* green */
+  --turbo-refresh-exit-bg: #F8D7DA;   /* red */
+  --turbo-refresh-change-bg: #FFF3CD; /* yellow */
+}
+```
 
 ### Define your own animations
 
@@ -134,8 +150,8 @@ Override the default CSS classes:
   animation: my-enter-animation 300ms ease-out;
 }
 
-.turbo-refresh-update {
-  animation: my-update-animation 300ms ease-out;
+.turbo-refresh-change {
+  animation: my-change-animation 300ms ease-out;
 }
 
 .turbo-refresh-exit {
@@ -145,11 +161,11 @@ Override the default CSS classes:
 
 ### Default animations
 
-The included `style.css` provides these defaults:
+The included CSS provides these defaults:
 
-- **Enter**: Green glow/flash effect (400ms)
-- **Update**: Yellow glow/flash effect (400ms)
-- **Exit**: Fade out with red background (800ms)
+- **Enter**: Green background fade (1.2s)
+- **Change**: Yellow background fade (1.2s)
+- **Exit**: Red background fade with opacity (0.6s)
 
 ## Data Attributes Reference
 
