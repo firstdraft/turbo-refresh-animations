@@ -2,9 +2,9 @@
  * Turbo Refresh Animations - Default Styles
  *
  * Import this file to get the default animations working out of the box.
- * You can override the default classes or define your own.
+ * Override the default classes or define your own in your application CSS.
  *
- * Default class names (applied automatically):
+ * Default class names (applied automatically by the library):
  *   .turbo-refresh-enter  - Applied to newly created elements
  *   .turbo-refresh-update - Applied to modified elements
  *   .turbo-refresh-exit   - Applied to elements being removed
@@ -12,104 +12,38 @@
 
 /* ========== KEYFRAMES ========== */
 
-@keyframes turbo-refresh-flash-green {
-  0%,
-  100% {
-    box-shadow: none;
-  }
-  20% {
-    box-shadow: 0 0 0 4px #d4edda, 0 0 12px #28a745;
-  }
+@keyframes turbo-refresh-enter-keyframes {
+  0%, 100% { box-shadow: none; }
+  20% { box-shadow: 0 0 0 4px #d4edda, 0 0 12px #28a745; }
 }
 
-@keyframes turbo-refresh-flash-yellow {
-  0%,
-  100% {
-    box-shadow: none;
-  }
-  20% {
-    box-shadow: 0 0 0 4px #fff3cd, 0 0 12px #ffc107;
-  }
+@keyframes turbo-refresh-update-keyframes {
+  0%, 100% { box-shadow: none; }
+  20% { box-shadow: 0 0 0 4px #fff3cd, 0 0 12px #ffc107; }
 }
 
-@keyframes turbo-refresh-fade-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes turbo-refresh-slide-in {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes turbo-refresh-slide-out {
-  from {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-}
-
-/* ========== ANIMATION CLASSES ========== */
-
-/* Flash green - good for new items */
-.turbo-refresh-flash-green {
-  animation: turbo-refresh-flash-green 400ms ease-in-out;
-  position: relative;
-  z-index: 1;
-}
-
-/* Flash yellow - good for updates */
-.turbo-refresh-flash-yellow {
-  animation: turbo-refresh-flash-yellow 400ms ease-in-out;
-  position: relative;
-  z-index: 1;
-}
-
-/* Fade out - good for deletions */
-.turbo-refresh-fade-out {
-  animation: turbo-refresh-fade-out 300ms ease-out forwards;
-}
-
-/* Slide in - alternative for new items */
-.turbo-refresh-slide-in {
-  animation: turbo-refresh-slide-in 300ms ease-out;
-}
-
-/* Slide out - alternative for deletions */
-.turbo-refresh-slide-out {
-  animation: turbo-refresh-slide-out 300ms ease-out forwards;
+@keyframes turbo-refresh-exit-keyframes {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 /* ========== DEFAULT CLASSES ========== */
-/* These are the classes applied automatically by the library. */
-/* Override these or use data-turbo-refresh-*-class for custom animations. */
+/* These are applied automatically by the library */
 
 .turbo-refresh-enter {
-  animation: turbo-refresh-flash-green 400ms ease-in-out;
+  animation: turbo-refresh-enter-keyframes 400ms ease-in-out;
   position: relative;
   z-index: 1;
 }
 
 .turbo-refresh-update {
-  animation: turbo-refresh-flash-yellow 400ms ease-in-out;
+  animation: turbo-refresh-update-keyframes 400ms ease-in-out;
   position: relative;
   z-index: 1;
 }
 
 .turbo-refresh-exit {
-  animation: turbo-refresh-fade-out 300ms ease-out forwards;
+  animation: turbo-refresh-exit-keyframes 800ms ease-out forwards;
+  background-color: #f8d7da !important;
+  transform: scale(0.95);
 }
