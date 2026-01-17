@@ -1,8 +1,9 @@
 // ========== TURBO REFRESH ANIMATIONS ==========
 // Animates elements during Turbo morphs using MutationObserver + Turbo events
 
-let hasRenderedCurrentPage = true
 let lastRenderedUrl = window.location.href
+let pendingVisitUrl = null
+let pendingVisitAction = null
 let observer = null
 let createdIds = new Set()
 let updatedIds = new Set()
@@ -11,25 +12,25 @@ let signaturesBefore = new Map()
 const animationClassCleanupTimers = new WeakMap()
 
 // ========== FORM PROTECTION ==========
-// Protect elements with data-turbo-stream-refresh-permanent during stream-delivered
-// refreshes (broadcasts) and same-URL refresh morphs. Allow the initiating element
+// Protect elements with data-turbo-stream-refresh-permanent during same-page refresh
+// morphs ("page refreshes"). Allow the initiating element
 // (form submit / link click inside it) to morph so user-intended updates apply.
 
-let inStreamRefresh = false
 let submittingPermanentId = null
 let pendingVisitingPermanentId = null
 let pendingVisitingPermanentAtMs = 0
 let visitingPermanentId = null
 
-document.addEventListener("turbo:before-stream-render", (event) => {
-  if (event.target.getAttribute("action") === "refresh") {
-    inStreamRefresh = true
-  }
-})
-
 document.addEventListener("turbo:submit-start", (event) => {
   const wrapper = event.target.closest("[data-turbo-stream-refresh-permanent]")
   submittingPermanentId = wrapper?.id || null
+})
+
+document.addEventListener("turbo:submit-end", (event) => {
+  const contentType = event.detail?.fetchResponse?.contentType || ""
+  if (contentType.startsWith("text/vnd.turbo-stream.html")) {
+    submittingPermanentId = null
+  }
 })
 
 document.addEventListener("turbo:click", (event) => {
@@ -38,17 +39,14 @@ document.addEventListener("turbo:click", (event) => {
   pendingVisitingPermanentAtMs = Date.now()
 })
 
-document.addEventListener("turbo:before-visit", () => {
+document.addEventListener("turbo:visit", (event) => {
+  pendingVisitUrl = event.detail.url
+  pendingVisitAction = event.detail.action
+
   const ageMs = Date.now() - pendingVisitingPermanentAtMs
   visitingPermanentId = ageMs >= 0 && ageMs < 2000 ? pendingVisitingPermanentId : null
   pendingVisitingPermanentId = null
   pendingVisitingPermanentAtMs = 0
-})
-
-document.addEventListener("turbo:visit", (event) => {
-  if (event.detail.url !== lastRenderedUrl) {
-    hasRenderedCurrentPage = false
-  }
 })
 
 document.addEventListener("turbo:before-cache", () => {
@@ -140,6 +138,25 @@ function meaningfulUpdateSignature(el) {
   const version = el.getAttribute("data-turbo-refresh-version")
   if (version !== null) return `v:${version}`
   return `t:${normalizedTextContent(el)}`
+}
+
+function pathnameForUrl(url) {
+  try {
+    return new URL(url, document.baseURI).pathname
+  } catch {
+    return null
+  }
+}
+
+function isPageRefreshVisit() {
+  if (pendingVisitAction !== "replace") return false
+  if (!pendingVisitUrl) return false
+
+  const pendingPathname = pathnameForUrl(pendingVisitUrl)
+  const lastRenderedPathname = pathnameForUrl(lastRenderedUrl)
+  if (!pendingPathname || !lastRenderedPathname) return false
+
+  return pendingPathname === lastRenderedPathname
 }
 
 function parseCssTimeMs(value) {
@@ -290,14 +307,13 @@ document.addEventListener("turbo:before-morph-element", (event) => {
   const newEl = event.detail.newElement
 
   // Protect permanent elements:
-  // - Always during stream refresh (broadcast)
-  // - During same-URL refresh morphs (preserve user state like open forms)
+  // - During same-page refresh morphs (preserve user state like open forms)
   // - EXCEPT the element initiating the refresh (form submit or link click within it)
   if (currentEl.hasAttribute("data-turbo-stream-refresh-permanent")) {
     const isSubmitting = currentEl.id === submittingPermanentId
     const isVisiting = currentEl.id === visitingPermanentId
     const isInitiator = isSubmitting || isVisiting
-    const shouldProtect = !isInitiator && (inStreamRefresh || hasRenderedCurrentPage)
+    const shouldProtect = !isInitiator && isPageRefreshVisit()
 
     if (shouldProtect) {
       event.preventDefault()
@@ -332,7 +348,7 @@ document.addEventListener("turbo:before-render", async (event) => {
   protectedUpdates = new Set()
   signaturesBefore = new Map()
 
-  if (!hasRenderedCurrentPage) {
+  if (!isPageRefreshVisit()) {
     return
   }
 
@@ -383,19 +399,17 @@ document.addEventListener("turbo:before-render", async (event) => {
 
   // Detect updates to protected elements (they won't morph, so MutationObserver won't see them)
   // Only use data-turbo-refresh-version for this to avoid false positives from view-state differences.
-  if (inStreamRefresh) {
-    document.querySelectorAll("[data-turbo-stream-refresh-permanent][data-turbo-refresh-animate][data-turbo-refresh-version][id]").forEach(el => {
-      const newEl = event.detail.newBody.querySelector(`#${CSS.escape(el.id)}`)
-      if (newEl) {
-        const oldVersion = el.getAttribute("data-turbo-refresh-version")
-        const newVersion = newEl.getAttribute("data-turbo-refresh-version")
-        if (newVersion === null) return
-        if (oldVersion !== newVersion) {
-          protectedUpdates.add(el.id)
-        }
+  document.querySelectorAll("[data-turbo-stream-refresh-permanent][data-turbo-refresh-animate][data-turbo-refresh-version][id]").forEach(el => {
+    const newEl = event.detail.newBody.querySelector(`#${CSS.escape(el.id)}`)
+    if (newEl) {
+      const oldVersion = el.getAttribute("data-turbo-refresh-version")
+      const newVersion = newEl.getAttribute("data-turbo-refresh-version")
+      if (newVersion === null) return
+      if (oldVersion !== newVersion) {
+        protectedUpdates.add(el.id)
       }
-    })
-  }
+    }
+  })
 
   observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
@@ -462,9 +476,7 @@ document.addEventListener("turbo:render", () => {
     observer = null
   }
 
-  hasRenderedCurrentPage = true
   lastRenderedUrl = window.location.href
-  inStreamRefresh = false
   submittingPermanentId = null
   visitingPermanentId = null
 
