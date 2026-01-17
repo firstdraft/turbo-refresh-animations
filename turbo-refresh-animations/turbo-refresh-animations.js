@@ -115,16 +115,45 @@ function findClosestAnimatable(node) {
   return null
 }
 
-function hasNonBlankInputs(el) {
+function hasDirtyInputs(el) {
   const inputs = el.querySelectorAll("input, textarea, select")
+
   for (const input of inputs) {
-    if (input.type === "hidden" || input.type === "submit") continue
+    if (input.disabled) continue
+
+    if (input.tagName === "SELECT") {
+      const options = input.options
+      if (!options || options.length === 0) continue
+
+      const defaultSelectedIndexes = new Set()
+      for (let i = 0; i < options.length; i++) {
+        if (options[i].defaultSelected) defaultSelectedIndexes.add(i)
+      }
+      if (defaultSelectedIndexes.size === 0) defaultSelectedIndexes.add(0)
+
+      for (let i = 0; i < options.length; i++) {
+        const isDefaultSelected = defaultSelectedIndexes.has(i)
+        if (options[i].selected !== isDefaultSelected) return true
+      }
+
+      continue
+    }
+
+    if (input.type === "hidden" || input.type === "submit" || input.type === "button" || input.type === "reset") continue
+
     if (input.type === "checkbox" || input.type === "radio") {
       if (input.checked !== input.defaultChecked) return true
-    } else if (input.value && input.value.trim() !== "") {
-      return true
+      continue
     }
+
+    if (input.type === "file") {
+      if (input.files && input.files.length > 0) return true
+      continue
+    }
+
+    if (input.value !== input.defaultValue) return true
   }
+
   return false
 }
 
@@ -287,11 +316,11 @@ document.addEventListener("turbo:before-morph-element", (event) => {
 
   // Protect permanent elements:
   // - Always during stream refresh (broadcast)
-  // - During navigation if element contains non-blank inputs (preserve user's work)
+  // - During navigation if element contains dirty inputs (preserve user's work)
   // - EXCEPT the form being submitted (it should always clear/refresh)
   if (currentEl.hasAttribute("data-turbo-stream-refresh-permanent")) {
     const isSubmitting = currentEl.id === submittingPermanentId
-    const shouldProtect = !isSubmitting && (inStreamRefresh || hasNonBlankInputs(currentEl))
+    const shouldProtect = !isSubmitting && (inStreamRefresh || hasDirtyInputs(currentEl))
 
     if (shouldProtect) {
       event.preventDefault()
