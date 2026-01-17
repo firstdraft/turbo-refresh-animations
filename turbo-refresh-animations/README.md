@@ -70,7 +70,7 @@ Elements will animate when created, changed, or deleted during Turbo morphs.
 
 ## How It Works
 
-The library uses a MutationObserver to detect actual DOM changes during Turbo morphs. Only elements with both an `id` and the `data-turbo-refresh-animate` attribute will be animated:
+The library compares each element's "meaningful signature" before and after Turbo renders a page refresh morph. Only elements with both an `id` and the `data-turbo-refresh-animate` attribute will be animated:
 
 | Animation | Trigger | Default Class |
 |-----------|---------|---------------|

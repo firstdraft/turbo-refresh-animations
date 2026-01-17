@@ -1,12 +1,10 @@
 // ========== TURBO REFRESH ANIMATIONS ==========
-// Animates elements during Turbo morphs using MutationObserver + Turbo events
+// Animates elements during Turbo page refresh morphs using Turbo events + before/after signatures
 
 let lastRenderedUrl = window.location.href
 let pendingVisitUrl = null
 let pendingVisitAction = null
-let observer = null
-let createdIds = new Set()
-let updatedIds = new Set()
+let shouldAnimateAfterRender = false
 let protectedUpdates = new Set()
 let signaturesBefore = new Map()
 const animationClassCleanupTimers = new WeakMap()
@@ -119,15 +117,6 @@ function applyAnimation(el, defaultClass) {
     currentTimers?.delete(animClass)
   }, waitMs)
   timers.set(animClass, timer)
-}
-
-function findClosestAnimatable(node) {
-  if (node.nodeType !== 1) node = node.parentElement
-  while (node) {
-    if (node.id && node.hasAttribute("data-turbo-refresh-animate")) return node.id
-    node = node.parentElement
-  }
-  return null
 }
 
 function normalizedTextContent(el) {
@@ -343,17 +332,13 @@ document.addEventListener("turbo:before-morph-element", (event) => {
 document.addEventListener("turbo:before-render", async (event) => {
   if (!event.detail.newBody) return
 
-  createdIds = new Set()
-  updatedIds = new Set()
   protectedUpdates = new Set()
   signaturesBefore = new Map()
 
-  if (!isPageRefreshVisit()) {
+  shouldAnimateAfterRender = isPageRefreshVisit()
+  if (!shouldAnimateAfterRender) {
     return
   }
-
-  const existingIds = new Set()
-  document.querySelectorAll("[id]").forEach(el => existingIds.add(el.id))
 
   document.querySelectorAll("[data-turbo-refresh-animate][id]").forEach(el => {
     signaturesBefore.set(el.id, meaningfulUpdateSignature(el))
@@ -397,7 +382,7 @@ document.addEventListener("turbo:before-render", async (event) => {
     }
   }
 
-  // Detect updates to protected elements (they won't morph, so MutationObserver won't see them)
+  // Detect updates to protected elements (they won't morph, so post-render signatures won't change)
   // Only use data-turbo-refresh-version for this to avoid false positives from view-state differences.
   document.querySelectorAll("[data-turbo-stream-refresh-permanent][data-turbo-refresh-animate][data-turbo-refresh-version][id]").forEach(el => {
     const newEl = event.detail.newBody.querySelector(`#${CSS.escape(el.id)}`)
@@ -411,95 +396,32 @@ document.addEventListener("turbo:before-render", async (event) => {
     }
   })
 
-  observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) {
-        if (node.nodeType === 1) {
-          if (node.id && node.hasAttribute("data-turbo-refresh-animate")) {
-            if (!existingIds.has(node.id)) {
-              createdIds.add(node.id)
-            } else if (!createdIds.has(node.id)) {
-              updatedIds.add(node.id)
-            }
-          }
-
-          node.querySelectorAll?.("[id][data-turbo-refresh-animate]").forEach(child => {
-            if (!existingIds.has(child.id)) {
-              createdIds.add(child.id)
-            } else if (!createdIds.has(child.id)) {
-              updatedIds.add(child.id)
-            }
-          })
-        }
-      }
-
-      if (mutation.type === "attributes") {
-        if (mutation.attributeName === "class") continue
-        const id = findClosestAnimatable(mutation.target)
-        if (id && existingIds.has(id) && !createdIds.has(id)) {
-          updatedIds.add(id)
-        }
-      }
-
-      if (mutation.type === "characterData") {
-        const id = findClosestAnimatable(mutation.target)
-        if (id && existingIds.has(id) && !createdIds.has(id)) {
-          updatedIds.add(id)
-        }
-      }
-
-      if (mutation.type === "childList" && mutation.target.id && mutation.target.hasAttribute("data-turbo-refresh-animate")) {
-        if (existingIds.has(mutation.target.id) && !createdIds.has(mutation.target.id)) {
-          updatedIds.add(mutation.target.id)
-        }
-      }
-    }
-  })
-
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeOldValue: true,
-    characterData: true,
-    characterDataOldValue: true
-  })
-
   if (shouldResume) {
     event.detail.resume()
   }
 })
 
 document.addEventListener("turbo:render", () => {
-  if (observer) {
-    observer.disconnect()
-    observer = null
-  }
-
   lastRenderedUrl = window.location.href
   submittingPermanentId = null
   visitingPermanentId = null
 
-  createdIds.forEach(id => {
-    const el = document.getElementById(id)
-    if (el) {
-      applyAnimation(el, "turbo-refresh-enter")
-    }
-  })
+  if (shouldAnimateAfterRender) {
+    document.querySelectorAll("[data-turbo-refresh-animate][id]").forEach(el => {
+      const beforeSignature = signaturesBefore.get(el.id)
+      if (beforeSignature === undefined) {
+        applyAnimation(el, "turbo-refresh-enter")
+        return
+      }
 
-  updatedIds.forEach(id => {
-    const el = document.getElementById(id)
-    if (el) {
-      const beforeSignature = signaturesBefore.get(id)
       const afterSignature = meaningfulUpdateSignature(el)
-      if (beforeSignature === undefined || beforeSignature !== afterSignature) {
+      if (beforeSignature !== afterSignature) {
         applyAnimation(el, "turbo-refresh-change")
       }
-    }
-  })
+    })
+  }
 
-  createdIds = new Set()
-  updatedIds = new Set()
+  shouldAnimateAfterRender = false
   protectedUpdates = new Set()
   signaturesBefore = new Map()
 })
