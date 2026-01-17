@@ -80,6 +80,29 @@ The library uses a MutationObserver to detect actual DOM changes during Turbo mo
 | Change | Element content/attributes change | `turbo-refresh-change` |
 | Exit | Element removed from DOM | `turbo-refresh-exit` |
 
+### Change Detection
+
+By default, change animations are triggered by MutationObserver detecting any DOM changes within the element. The library automatically filters out some common noise:
+
+- **Hidden inputs**: Changes to `<input type="hidden">` (like CSRF tokens) are ignored
+
+However, MutationObserver may still pick up changes that aren't meaningful to users (framework attributes, timestamps, etc.). For precise control, use `data-turbo-refresh-version`:
+
+```erb
+<div id="<%= dom_id(item) %>"
+     data-turbo-refresh-animate
+     data-turbo-refresh-version="<%= item.cache_version %>">
+  <%= item.title %>
+  <%= button_to "Delete", item, method: :delete %>
+</div>
+```
+
+When `data-turbo-refresh-version` is present, the element **only** animates changes when the version value differs between the old and new page. This is useful when:
+
+- Elements contain forms with CSRF tokens (via `button_to`)
+- Elements include dynamic attributes from JavaScript frameworks
+- You want explicit control over what constitutes a "change"
+
 ## Protecting Elements During Broadcasts
 
 ### `data-turbo-stream-refresh-permanent`
@@ -227,7 +250,7 @@ The included CSS provides these defaults:
 | `data-turbo-refresh-change-off` | Disable change animation |
 | `data-turbo-refresh-exit-off` | Disable exit animation |
 | `data-turbo-stream-refresh-permanent` | Protect element during broadcast morphs |
-| `data-turbo-refresh-version` | Version string for change detection on protected elements |
+| `data-turbo-refresh-version` | Version string for precise change detection (e.g., `item.cache_version`) |
 
 ## Example: Todo List Item
 

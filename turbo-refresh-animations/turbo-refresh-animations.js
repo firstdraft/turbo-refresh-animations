@@ -7,6 +7,8 @@ let observer = null
 let createdIds = new Set()
 let updatedIds = new Set()
 let protectedUpdates = new Map()
+let versionedIds = new Set()  // Elements with data-turbo-refresh-version (skip MutationObserver detection)
+let versionChangedIds = new Set()  // Elements whose version actually changed
 
 // ========== FORM PROTECTION ==========
 // Protect elements with data-turbo-stream-refresh-permanent during stream-delivered
@@ -54,6 +56,8 @@ function applyAnimation(el, defaultClass) {
 function findClosestAnimatable(node) {
   if (node.nodeType !== 1) node = node.parentElement
   while (node) {
+    // Ignore changes inside hidden inputs (CSRF tokens, etc.)
+    if (node.tagName === "INPUT" && node.type === "hidden") return null
     if (node.id && node.hasAttribute("data-turbo-refresh-animate")) return node.id
     node = node.parentElement
   }
@@ -259,6 +263,8 @@ document.addEventListener("turbo:before-render", async (event) => {
   createdIds = new Set()
   updatedIds = new Set()
   protectedUpdates = new Map()
+  versionedIds = new Set()
+  versionChangedIds = new Set()
 
   if (!hasRenderedCurrentPage) {
     return
@@ -266,6 +272,19 @@ document.addEventListener("turbo:before-render", async (event) => {
 
   const existingIds = new Set()
   document.querySelectorAll("[id]").forEach(el => existingIds.add(el.id))
+
+  // Detect version-based changes (these skip MutationObserver detection)
+  document.querySelectorAll("[data-turbo-refresh-animate][data-turbo-refresh-version][id]").forEach(el => {
+    versionedIds.add(el.id)
+    const newEl = event.detail.newBody.querySelector(`#${CSS.escape(el.id)}`)
+    if (newEl) {
+      const oldVersion = el.dataset.turboRefreshVersion
+      const newVersion = newEl.dataset.turboRefreshVersion
+      if (oldVersion !== newVersion) {
+        versionChangedIds.add(el.id)
+      }
+    }
+  })
 
   let shouldResume = false
 
@@ -338,20 +357,23 @@ document.addEventListener("turbo:before-render", async (event) => {
       if (mutation.type === "attributes") {
         if (mutation.attributeName === "class") continue
         const id = findClosestAnimatable(mutation.target)
-        if (id && existingIds.has(id) && !createdIds.has(id)) {
+        // Skip if element uses version-based change detection
+        if (id && existingIds.has(id) && !createdIds.has(id) && !versionedIds.has(id)) {
           updatedIds.add(id)
         }
       }
 
       if (mutation.type === "characterData") {
         const id = findClosestAnimatable(mutation.target)
-        if (id && existingIds.has(id) && !createdIds.has(id)) {
+        // Skip if element uses version-based change detection
+        if (id && existingIds.has(id) && !createdIds.has(id) && !versionedIds.has(id)) {
           updatedIds.add(id)
         }
       }
 
       if (mutation.type === "childList" && mutation.target.id && mutation.target.hasAttribute("data-turbo-refresh-animate")) {
-        if (existingIds.has(mutation.target.id) && !createdIds.has(mutation.target.id)) {
+        // Skip if element uses version-based change detection
+        if (existingIds.has(mutation.target.id) && !createdIds.has(mutation.target.id) && !versionedIds.has(mutation.target.id)) {
           updatedIds.add(mutation.target.id)
         }
       }
@@ -390,6 +412,9 @@ document.addEventListener("turbo:render", () => {
     }
   })
 
+  // Merge version-based changes with MutationObserver-detected changes
+  versionChangedIds.forEach(id => updatedIds.add(id))
+
   updatedIds.forEach(id => {
     const el = document.getElementById(id)
     if (el) {
@@ -400,4 +425,6 @@ document.addEventListener("turbo:render", () => {
   createdIds = new Set()
   updatedIds = new Set()
   protectedUpdates = new Map()
+  versionedIds = new Set()
+  versionChangedIds = new Set()
 })
