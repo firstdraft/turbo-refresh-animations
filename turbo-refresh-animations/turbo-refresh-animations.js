@@ -322,14 +322,15 @@ document.addEventListener("turbo:before-render", async (event) => {
   }
 
   // Detect updates to protected elements (they won't morph, so MutationObserver won't see them)
-  // Prefer data-turbo-refresh-version; otherwise fall back to normalized text content.
+  // Only use data-turbo-refresh-version for this to avoid false positives from view-state differences.
   if (inStreamRefresh) {
-    document.querySelectorAll("[data-turbo-stream-refresh-permanent][data-turbo-refresh-animate][id]").forEach(el => {
+    document.querySelectorAll("[data-turbo-stream-refresh-permanent][data-turbo-refresh-animate][data-turbo-refresh-version][id]").forEach(el => {
       const newEl = event.detail.newBody.querySelector(`#${CSS.escape(el.id)}`)
       if (newEl) {
-        const oldSignature = signaturesBefore.get(el.id) || meaningfulUpdateSignature(el)
-        const newSignature = meaningfulUpdateSignature(newEl)
-        if (oldSignature !== newSignature) {
+        const oldVersion = el.getAttribute("data-turbo-refresh-version")
+        const newVersion = newEl.getAttribute("data-turbo-refresh-version")
+        if (newVersion === null) return
+        if (oldVersion !== newVersion) {
           protectedUpdates.set(el.id, true)
         }
       }
