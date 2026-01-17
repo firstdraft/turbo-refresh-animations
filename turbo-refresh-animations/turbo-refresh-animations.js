@@ -73,6 +73,148 @@ function hasNonBlankInputs(el) {
   return false
 }
 
+function parseCssTimeMs(value) {
+  const trimmed = value.trim()
+  if (trimmed === "") return 0
+  if (trimmed.endsWith("ms")) return Number.parseFloat(trimmed)
+  if (trimmed.endsWith("s")) return Number.parseFloat(trimmed) * 1000
+  const fallback = Number.parseFloat(trimmed)
+  return Number.isFinite(fallback) ? fallback * 1000 : 0
+}
+
+function parseCssTimeListMs(value) {
+  return value
+    .split(",")
+    .map(part => parseCssTimeMs(part))
+    .filter(Number.isFinite)
+}
+
+function parseCssNumberList(value) {
+  return value
+    .split(",")
+    .map(part => {
+      const trimmed = part.trim()
+      if (trimmed === "infinite") return 1
+      const num = Number.parseFloat(trimmed)
+      return Number.isFinite(num) ? num : 1
+    })
+}
+
+function maxTimingMs(durationsMs, delaysMs, iterations) {
+  const count = Math.max(durationsMs.length, delaysMs.length, iterations.length)
+  if (count === 0) return 0
+
+  let maxMs = 0
+  for (let i = 0; i < count; i++) {
+    const duration = durationsMs[i % durationsMs.length] || 0
+    const delay = delaysMs[i % delaysMs.length] || 0
+    const iteration = iterations[i % iterations.length] || 1
+    maxMs = Math.max(maxMs, delay + duration * iteration)
+  }
+
+  return maxMs
+}
+
+function expectedAnimationEndCount(el) {
+  const style = window.getComputedStyle(el)
+  if (!style.animationName || style.animationName === "none") return 0
+
+  const names = style.animationName.split(",").map(name => name.trim())
+  const durationsMs = parseCssTimeListMs(style.animationDuration)
+  const iterations = parseCssNumberList(style.animationIterationCount)
+
+  let count = 0
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i]
+    if (!name || name === "none") continue
+    const duration = durationsMs[i % durationsMs.length] || 0
+    const iteration = iterations[i % iterations.length] || 1
+    if (duration > 0 && iteration > 0) count += 1
+  }
+
+  return count
+}
+
+function maxWaitMsForAnimationOrTransition(el) {
+  const style = window.getComputedStyle(el)
+  let maxMs = 0
+
+  if (style.animationName && style.animationName !== "none") {
+    maxMs = Math.max(
+      maxMs,
+      maxTimingMs(
+        parseCssTimeListMs(style.animationDuration),
+        parseCssTimeListMs(style.animationDelay),
+        parseCssNumberList(style.animationIterationCount)
+      )
+    )
+  }
+
+  if (style.transitionProperty && style.transitionProperty !== "none") {
+    maxMs = Math.max(
+      maxMs,
+      maxTimingMs(
+        parseCssTimeListMs(style.transitionDuration),
+        parseCssTimeListMs(style.transitionDelay),
+        [1]
+      )
+    )
+  }
+
+  return maxMs > 0 ? maxMs + 50 : 0
+}
+
+function animateAndRemove(el, animClass) {
+  return new Promise(resolve => {
+    let finished = false
+    let timer = null
+    let endedCount = 0
+    let expectedEnds = 0
+
+    const finish = () => {
+      if (finished) return
+      finished = true
+
+      if (timer) clearTimeout(timer)
+      el.removeEventListener("animationend", onEnd)
+      el.removeEventListener("animationcancel", onCancel)
+      el.removeEventListener("transitioncancel", onCancel)
+
+      el.remove()
+      resolve()
+    }
+
+    const onEnd = (event) => {
+      if (event.target !== el) return
+      endedCount += 1
+      if (expectedEnds > 0 && endedCount >= expectedEnds) {
+        finish()
+      }
+    }
+
+    const onCancel = (event) => {
+      if (event.target !== el) return
+      finish()
+    }
+
+    el.addEventListener("animationend", onEnd)
+    el.addEventListener("animationcancel", onCancel)
+    el.addEventListener("transitioncancel", onCancel)
+
+    el.classList.add(animClass)
+
+    expectedEnds = expectedAnimationEndCount(el)
+    const waitMs = maxWaitMsForAnimationOrTransition(el)
+
+    if (expectedEnds === 0 && waitMs === 0) {
+      finish()
+      return
+    }
+
+    timer = setTimeout(finish, waitMs > 0 ? waitMs : 2000)
+  })
+}
+
 // Handle morphing: protect permanent elements, animate deletes
 document.addEventListener("turbo:before-morph-element", (event) => {
   const currentEl = event.target
@@ -106,10 +248,7 @@ document.addEventListener("turbo:before-morph-element", (event) => {
     if (!exitClass) return // Let Idiomorph remove it normally
 
     event.preventDefault()
-    currentEl.classList.add(exitClass)
-    currentEl.addEventListener("animationend", () => {
-      currentEl.remove()
-    }, { once: true })
+    animateAndRemove(currentEl, exitClass)
   }
 })
 
@@ -128,6 +267,8 @@ document.addEventListener("turbo:before-render", async (event) => {
   const existingIds = new Set()
   document.querySelectorAll("[id]").forEach(el => existingIds.add(el.id))
 
+  let shouldResume = false
+
   // Detect elements that will be deleted
   const newBodyIds = new Set()
   event.detail.newBody.querySelectorAll("[id]").forEach(el => newBodyIds.add(el.id))
@@ -142,27 +283,25 @@ document.addEventListener("turbo:before-render", async (event) => {
   // If there are deletions, animate them BEFORE the morph
   if (deletions.length > 0) {
     // Filter to only elements that want exit animation and get their classes
-    const animatedDeletions = deletions
+    const candidateDeletions = deletions
       .map(el => ({ el, exitClass: getAnimationClass(el, "exit", "turbo-refresh-exit") }))
       .filter(({ exitClass }) => exitClass)
 
-    if (animatedDeletions.length > 0) {
+    if (candidateDeletions.length > 0) {
       event.preventDefault()
+      shouldResume = true
 
-      const animationPromises = animatedDeletions.map(({ el, exitClass }) => {
-        return new Promise(resolve => {
-          el.classList.add(exitClass)
-          el.addEventListener("animationend", () => {
-            el.remove()
-            resolve()
-          }, { once: true })
-        })
+      const candidateSet = new Set(candidateDeletions.map(({ el }) => el))
+      const topLevelDeletions = candidateDeletions.filter(({ el }) => {
+        let parent = el.parentElement
+        while (parent) {
+          if (candidateSet.has(parent)) return false
+          parent = parent.parentElement
+        }
+        return true
       })
 
-      await Promise.all(animationPromises)
-
-      // Now manually trigger the render
-      event.detail.resume()
+      await Promise.all(topLevelDeletions.map(({ el, exitClass }) => animateAndRemove(el, exitClass)))
     }
   }
 
@@ -227,6 +366,10 @@ document.addEventListener("turbo:before-render", async (event) => {
     characterData: true,
     characterDataOldValue: true
   })
+
+  if (shouldResume) {
+    event.detail.resume()
+  }
 })
 
 document.addEventListener("turbo:render", () => {

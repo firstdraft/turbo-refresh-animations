@@ -6,11 +6,15 @@
   "type": "module",
   "exports": {
     ".": "./index.js",
-    "./style.css": "./style.css"
+    "./style.css": "./style.css",
+    "./turbo-refresh-animations.js": "./turbo-refresh-animations.js",
+    "./turbo-refresh-animations.css": "./turbo-refresh-animations.css"
   },
   "files": [
     "index.js",
-    "style.css"
+    "style.css",
+    "turbo-refresh-animations.js",
+    "turbo-refresh-animations.css"
   ],
   "keywords": [
     "turbo",
