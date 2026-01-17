@@ -130,7 +130,7 @@ Since forms are the most common use case, the library includes special handling:
 
 1. **Submitter's form still clears**: When a user submits a form inside a protected element, that specific element is allowed to morph normally (so the form clears after submission via the redirect response). Other protected elements remain protected.
 
-2. **Dirty inputs preserved during navigation**: Even during user-initiated navigation (not just broadcasts), elements with `data-turbo-stream-refresh-permanent` that contain dirty form inputs will be protected. Dirty means the current value differs from the input's initial/default value (e.g., `value !== defaultValue`, `checked !== defaultChecked`, or select option selection differs from the default selection). This preserves the user's work-in-progress if they accidentally navigate away.
+2. **Same-page refreshes preserve state**: Even during refresh morphs that stay on the same URL (e.g., `redirect_to` back to the current page), elements with `data-turbo-stream-refresh-permanent` stay protected. This preserves user-created UI state like open edit forms. Links clicked inside a protected element are allowed to morph that element so user-intended actions (like "Cancel") still apply.
 
 ### Flash protected elements on update
 

@@ -12,10 +12,14 @@ const animationClassCleanupTimers = new WeakMap()
 
 // ========== FORM PROTECTION ==========
 // Protect elements with data-turbo-stream-refresh-permanent during stream-delivered
-// refreshes (broadcasts). During navigation, protect elements with non-blank inputs.
+// refreshes (broadcasts) and same-URL refresh morphs. Allow the initiating element
+// (form submit / link click inside it) to morph so user-intended updates apply.
 
 let inStreamRefresh = false
 let submittingPermanentId = null
+let pendingVisitingPermanentId = null
+let pendingVisitingPermanentAtMs = 0
+let visitingPermanentId = null
 
 document.addEventListener("turbo:before-stream-render", (event) => {
   if (event.target.getAttribute("action") === "refresh") {
@@ -26,6 +30,19 @@ document.addEventListener("turbo:before-stream-render", (event) => {
 document.addEventListener("turbo:submit-start", (event) => {
   const wrapper = event.target.closest("[data-turbo-stream-refresh-permanent]")
   submittingPermanentId = wrapper?.id || null
+})
+
+document.addEventListener("turbo:click", (event) => {
+  const wrapper = event.target.closest("[data-turbo-stream-refresh-permanent][id]")
+  pendingVisitingPermanentId = wrapper?.id || null
+  pendingVisitingPermanentAtMs = Date.now()
+})
+
+document.addEventListener("turbo:before-visit", () => {
+  const ageMs = Date.now() - pendingVisitingPermanentAtMs
+  visitingPermanentId = ageMs >= 0 && ageMs < 2000 ? pendingVisitingPermanentId : null
+  pendingVisitingPermanentId = null
+  pendingVisitingPermanentAtMs = 0
 })
 
 document.addEventListener("turbo:visit", (event) => {
@@ -113,48 +130,6 @@ function findClosestAnimatable(node) {
     node = node.parentElement
   }
   return null
-}
-
-function hasDirtyInputs(el) {
-  const inputs = el.querySelectorAll("input, textarea, select")
-
-  for (const input of inputs) {
-    if (input.disabled) continue
-
-    if (input.tagName === "SELECT") {
-      const options = input.options
-      if (!options || options.length === 0) continue
-
-      const defaultSelectedIndexes = new Set()
-      for (let i = 0; i < options.length; i++) {
-        if (options[i].defaultSelected) defaultSelectedIndexes.add(i)
-      }
-      if (defaultSelectedIndexes.size === 0) defaultSelectedIndexes.add(0)
-
-      for (let i = 0; i < options.length; i++) {
-        const isDefaultSelected = defaultSelectedIndexes.has(i)
-        if (options[i].selected !== isDefaultSelected) return true
-      }
-
-      continue
-    }
-
-    if (input.type === "hidden" || input.type === "submit" || input.type === "button" || input.type === "reset") continue
-
-    if (input.type === "checkbox" || input.type === "radio") {
-      if (input.checked !== input.defaultChecked) return true
-      continue
-    }
-
-    if (input.type === "file") {
-      if (input.files && input.files.length > 0) return true
-      continue
-    }
-
-    if (input.value !== input.defaultValue) return true
-  }
-
-  return false
 }
 
 function normalizedTextContent(el) {
@@ -316,11 +291,13 @@ document.addEventListener("turbo:before-morph-element", (event) => {
 
   // Protect permanent elements:
   // - Always during stream refresh (broadcast)
-  // - During navigation if element contains dirty inputs (preserve user's work)
-  // - EXCEPT the form being submitted (it should always clear/refresh)
+  // - During same-URL refresh morphs (preserve user state like open forms)
+  // - EXCEPT the element initiating the refresh (form submit or link click within it)
   if (currentEl.hasAttribute("data-turbo-stream-refresh-permanent")) {
     const isSubmitting = currentEl.id === submittingPermanentId
-    const shouldProtect = !isSubmitting && (inStreamRefresh || hasDirtyInputs(currentEl))
+    const isVisiting = currentEl.id === visitingPermanentId
+    const isInitiator = isSubmitting || isVisiting
+    const shouldProtect = !isInitiator && (inStreamRefresh || hasRenderedCurrentPage)
 
     if (shouldProtect) {
       event.preventDefault()
@@ -489,6 +466,7 @@ document.addEventListener("turbo:render", () => {
   lastRenderedUrl = window.location.href
   inStreamRefresh = false
   submittingPermanentId = null
+  visitingPermanentId = null
 
   createdIds.forEach(id => {
     const el = document.getElementById(id)
