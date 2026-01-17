@@ -32,7 +32,17 @@ document.addEventListener("turbo:visit", (event) => {
   }
 })
 
+function isAnimationDisabled(el, animType) {
+  // Check for data-turbo-refresh-enter="none", data-turbo-refresh-exit="none", etc.
+  const attr = el.dataset[`turboRefresh${animType.charAt(0).toUpperCase() + animType.slice(1)}`]
+  return attr === "none"
+}
+
 function applyAnimation(el, animClass) {
+  // Extract animation type from class name (e.g., "turbo-refresh-enter" -> "enter")
+  const animType = animClass.replace("turbo-refresh-", "")
+  if (isAnimationDisabled(el, animType)) return
+
   el.classList.add(animClass)
   el.addEventListener("animationend", () => el.classList.remove(animClass), { once: true })
 }
@@ -88,6 +98,8 @@ document.addEventListener("turbo:before-morph-element", (event) => {
   if (!currentEl.id || !currentEl.hasAttribute("data-turbo-refresh-animate")) return
 
   if (newEl === undefined) {
+    if (isAnimationDisabled(currentEl, "exit")) return // Let Idiomorph remove it normally
+
     event.preventDefault()
     currentEl.classList.add("turbo-refresh-exit")
     currentEl.addEventListener("animationend", () => {
@@ -124,22 +136,27 @@ document.addEventListener("turbo:before-render", async (event) => {
 
   // If there are deletions, animate them BEFORE the morph
   if (deletions.length > 0) {
-    event.preventDefault()
+    // Filter to only elements that want exit animation
+    const animatedDeletions = deletions.filter(el => !isAnimationDisabled(el, "exit"))
 
-    const animationPromises = deletions.map(el => {
-      return new Promise(resolve => {
-        el.classList.add("turbo-refresh-exit")
-        el.addEventListener("animationend", () => {
-          el.remove()
-          resolve()
-        }, { once: true })
+    if (animatedDeletions.length > 0) {
+      event.preventDefault()
+
+      const animationPromises = animatedDeletions.map(el => {
+        return new Promise(resolve => {
+          el.classList.add("turbo-refresh-exit")
+          el.addEventListener("animationend", () => {
+            el.remove()
+            resolve()
+          }, { once: true })
+        })
       })
-    })
 
-    await Promise.all(animationPromises)
+      await Promise.all(animationPromises)
 
-    // Now manually trigger the render
-    event.detail.resume()
+      // Now manually trigger the render
+      event.detail.resume()
+    }
   }
 
   // Detect updates to protected elements (they won't morph, so MutationObserver won't see them)
