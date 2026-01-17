@@ -302,7 +302,7 @@ document.addEventListener("turbo:before-morph-element", (event) => {
     const isSubmitting = currentEl.id === submittingPermanentId
     const isVisiting = currentEl.id === visitingPermanentId
     const isInitiator = isSubmitting || isVisiting
-    const shouldProtect = !isInitiator && isPageRefreshVisit()
+    const shouldProtect = !isInitiator && shouldAnimateAfterRender
 
     if (shouldProtect) {
       event.preventDefault()
