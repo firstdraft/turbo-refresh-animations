@@ -9,7 +9,7 @@
 }
 
 .turbo-refresh-enter {
-  animation: turbo-refresh-enter 1.2s ease-out;
+  animation: turbo-refresh-enter var(--turbo-refresh-enter-duration, 1.2s) var(--turbo-refresh-easing, ease-out);
 }
 
 /* Exit (red) */
@@ -19,7 +19,7 @@
 }
 
 .turbo-refresh-exit {
-  animation: turbo-refresh-exit 0.6s ease-out forwards;
+  animation: turbo-refresh-exit var(--turbo-refresh-exit-duration, 0.6s) var(--turbo-refresh-easing, ease-out) forwards;
 }
 
 /* Change (yellow) */
@@ -29,5 +29,14 @@
 }
 
 .turbo-refresh-change {
-  animation: turbo-refresh-change 1.2s ease-out;
+  animation: turbo-refresh-change var(--turbo-refresh-change-duration, 1.2s) var(--turbo-refresh-easing, ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turbo-refresh-enter,
+  .turbo-refresh-change,
+  .turbo-refresh-exit {
+    animation-duration: 1ms;
+    animation-iteration-count: 1;
+  }
 }

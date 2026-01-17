@@ -40,13 +40,11 @@ import "turbo-refresh-animations"
 ```css
 /* app/assets/stylesheets/application.css */
 @import "turbo-refresh-animations/turbo-refresh-animations.css";
+/* or */
+@import "turbo-refresh-animations/style.css";
 ```
 
-Or with Rails asset pipeline, add to your layout:
-
-```erb
-<%= stylesheet_link_tag "turbo-refresh-animations" %>
-```
+Without a CSS bundler, copy `node_modules/turbo-refresh-animations/turbo-refresh-animations.css` into your app and include it as usual.
 
 ### 3. Enable morphing in your layout
 
@@ -83,6 +81,8 @@ The library uses a MutationObserver to detect actual DOM changes during Turbo mo
 ### Change Detection
 
 By default, change animations run only when an element's normalized `textContent` differs between the old and new page. This naturally ignores most "noise" that isn't user-visible (CSRF tokens, framework attributes, etc.).
+
+Normalization collapses all whitespace to single spaces and trims leading/trailing whitespace.
 
 For precise control (and to count non-text changes as meaningful), use `data-turbo-refresh-version`:
 
@@ -150,6 +150,8 @@ To show a visual indicator when a protected element's underlying data changes (e
 
 When the version changes during a broadcast, the element flashes with the change animation while keeping its current content protected.
 
+Note: protected elements can temporarily be in a different "view state" than the server-rendered HTML (e.g., an open edit form vs a read-only item view). To avoid false positives, the library only flashes protected elements based on `data-turbo-refresh-version` from the incoming HTML. In practice, add `data-turbo-refresh-version` to all render variants of a given `id` if you want flashing to work reliably.
+
 ## Customization
 
 ### Override colors via CSS variables
@@ -159,6 +161,17 @@ When the version changes during a broadcast, the element flashes with the change
   --turbo-refresh-enter-bg: #D1E7DD;  /* green */
   --turbo-refresh-exit-bg: #F8D7DA;   /* red */
   --turbo-refresh-change-bg: #FFF3CD; /* yellow */
+}
+```
+
+### Tune durations and easing
+
+```css
+:root {
+  --turbo-refresh-enter-duration: 600ms;
+  --turbo-refresh-change-duration: 600ms;
+  --turbo-refresh-exit-duration: 400ms;
+  --turbo-refresh-easing: ease-out;
 }
 ```
 
@@ -231,9 +244,11 @@ Override the default CSS classes. Here's an example using box-shadow glow effect
 
 The included CSS provides these defaults:
 
-- **Enter**: Green background fade (1.2s)
-- **Change**: Yellow background fade (1.2s)
-- **Exit**: Red background fade with opacity (0.6s)
+- **Enter**: Green background fade (`--turbo-refresh-enter-duration`, default 1.2s)
+- **Change**: Yellow background fade (`--turbo-refresh-change-duration`, default 1.2s)
+- **Exit**: Red background fade with opacity (`--turbo-refresh-exit-duration`, default 0.6s)
+
+Animations automatically reduce for users with `prefers-reduced-motion: reduce`.
 
 ## Data Attributes Reference
 

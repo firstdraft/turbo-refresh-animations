@@ -6,8 +6,9 @@ let lastRenderedUrl = window.location.href
 let observer = null
 let createdIds = new Set()
 let updatedIds = new Set()
-let protectedUpdates = new Map()
+let protectedUpdates = new Set()
 let signaturesBefore = new Map()
+const animationClassCleanupTimers = new WeakMap()
 
 // ========== FORM PROTECTION ==========
 // Protect elements with data-turbo-stream-refresh-permanent during stream-delivered
@@ -48,8 +49,36 @@ function applyAnimation(el, defaultClass) {
   const animClass = getAnimationClass(el, animType, defaultClass)
   if (!animClass) return
 
+  if (el.classList.contains(animClass)) {
+    el.classList.remove(animClass)
+    // Force a reflow so the same animation class can retrigger.
+    void el.offsetWidth
+  }
+
   el.classList.add(animClass)
-  el.addEventListener("animationend", () => el.classList.remove(animClass), { once: true })
+
+  let timers = animationClassCleanupTimers.get(el)
+  if (!timers) {
+    timers = new Map()
+    animationClassCleanupTimers.set(el, timers)
+  }
+
+  const existingTimer = timers.get(animClass)
+  if (existingTimer) window.clearTimeout(existingTimer)
+
+  const waitMs = maxWaitMsForAnimationOrTransition(el)
+  if (waitMs === 0) {
+    el.classList.remove(animClass)
+    timers.delete(animClass)
+    return
+  }
+
+  const timer = window.setTimeout(() => {
+    el.classList.remove(animClass)
+    const currentTimers = animationClassCleanupTimers.get(el)
+    currentTimers?.delete(animClass)
+  }, waitMs)
+  timers.set(animClass, timer)
 }
 
 function findClosestAnimatable(node) {
@@ -269,7 +298,7 @@ document.addEventListener("turbo:before-render", async (event) => {
 
   createdIds = new Set()
   updatedIds = new Set()
-  protectedUpdates = new Map()
+  protectedUpdates = new Set()
   signaturesBefore = new Map()
 
   if (!hasRenderedCurrentPage) {
@@ -331,7 +360,7 @@ document.addEventListener("turbo:before-render", async (event) => {
         const newVersion = newEl.getAttribute("data-turbo-refresh-version")
         if (newVersion === null) return
         if (oldVersion !== newVersion) {
-          protectedUpdates.set(el.id, true)
+          protectedUpdates.add(el.id)
         }
       }
     })
@@ -341,12 +370,19 @@ document.addEventListener("turbo:before-render", async (event) => {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node.nodeType === 1) {
-          if (node.id && node.hasAttribute("data-turbo-refresh-animate") && !existingIds.has(node.id)) {
-            createdIds.add(node.id)
+          if (node.id && node.hasAttribute("data-turbo-refresh-animate")) {
+            if (!existingIds.has(node.id)) {
+              createdIds.add(node.id)
+            } else if (!createdIds.has(node.id)) {
+              updatedIds.add(node.id)
+            }
           }
+
           node.querySelectorAll?.("[id][data-turbo-refresh-animate]").forEach(child => {
             if (!existingIds.has(child.id)) {
               createdIds.add(child.id)
+            } else if (!createdIds.has(child.id)) {
+              updatedIds.add(child.id)
             }
           })
         }
@@ -420,6 +456,6 @@ document.addEventListener("turbo:render", () => {
 
   createdIds = new Set()
   updatedIds = new Set()
-  protectedUpdates = new Map()
+  protectedUpdates = new Set()
   signaturesBefore = new Map()
 })
