@@ -148,12 +148,12 @@ Opt out of individual animation types per element:
 ```erb
 <div id="<%= dom_id(item) %>"
      data-turbo-refresh-animate
-     data-turbo-refresh-enter="none">
+     data-turbo-refresh-enter-off>
   <!-- No enter animation, but exit and change still work -->
 </div>
 ```
 
-Options: `data-turbo-refresh-enter="none"`, `data-turbo-refresh-exit="none"`, `data-turbo-refresh-change="none"`
+Options: `data-turbo-refresh-enter-off`, `data-turbo-refresh-exit-off`, `data-turbo-refresh-change-off`
 
 ### Define your own animations
 
@@ -205,9 +205,9 @@ The included CSS provides these defaults:
 |-----------|---------|
 | `id` | Element identifier (required) |
 | `data-turbo-refresh-animate` | Opt-in element for animations |
-| `data-turbo-refresh-enter="none"` | Disable enter animation |
-| `data-turbo-refresh-change="none"` | Disable change animation |
-| `data-turbo-refresh-exit="none"` | Disable exit animation |
+| `data-turbo-refresh-enter-off` | Disable enter animation |
+| `data-turbo-refresh-change-off` | Disable change animation |
+| `data-turbo-refresh-exit-off` | Disable exit animation |
 | `data-turbo-stream-refresh-permanent` | Protect element during broadcast morphs |
 | `data-turbo-refresh-version` | Version string for change detection on protected elements |
 

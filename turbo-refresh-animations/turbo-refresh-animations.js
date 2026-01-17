@@ -33,9 +33,8 @@ document.addEventListener("turbo:visit", (event) => {
 })
 
 function isAnimationDisabled(el, animType) {
-  // Check for data-turbo-refresh-enter="none", data-turbo-refresh-exit="none", etc.
-  const attr = el.dataset[`turboRefresh${animType.charAt(0).toUpperCase() + animType.slice(1)}`]
-  return attr === "none"
+  // Check for data-turbo-refresh-enter-off, data-turbo-refresh-exit-off, etc.
+  return el.hasAttribute(`data-turbo-refresh-${animType}-off`)
 }
 
 function applyAnimation(el, animClass) {
