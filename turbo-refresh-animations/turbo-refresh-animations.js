@@ -32,15 +32,20 @@ document.addEventListener("turbo:visit", (event) => {
   }
 })
 
-function isAnimationDisabled(el, animType) {
-  // Check for data-turbo-refresh-enter-off, data-turbo-refresh-exit-off, etc.
-  return el.hasAttribute(`data-turbo-refresh-${animType}-off`)
+function getAnimationClass(el, animType, defaultClass) {
+  // Check if disabled via data-turbo-refresh-{type}-off
+  if (el.hasAttribute(`data-turbo-refresh-${animType}-off`)) return null
+
+  // Check for custom class via data-turbo-refresh-{type}="my-class"
+  const customClass = el.getAttribute(`data-turbo-refresh-${animType}`)
+  return customClass || defaultClass
 }
 
-function applyAnimation(el, animClass) {
+function applyAnimation(el, defaultClass) {
   // Extract animation type from class name (e.g., "turbo-refresh-enter" -> "enter")
-  const animType = animClass.replace("turbo-refresh-", "")
-  if (isAnimationDisabled(el, animType)) return
+  const animType = defaultClass.replace("turbo-refresh-", "")
+  const animClass = getAnimationClass(el, animType, defaultClass)
+  if (!animClass) return
 
   el.classList.add(animClass)
   el.addEventListener("animationend", () => el.classList.remove(animClass), { once: true })
@@ -97,10 +102,11 @@ document.addEventListener("turbo:before-morph-element", (event) => {
   if (!currentEl.id || !currentEl.hasAttribute("data-turbo-refresh-animate")) return
 
   if (newEl === undefined) {
-    if (isAnimationDisabled(currentEl, "exit")) return // Let Idiomorph remove it normally
+    const exitClass = getAnimationClass(currentEl, "exit", "turbo-refresh-exit")
+    if (!exitClass) return // Let Idiomorph remove it normally
 
     event.preventDefault()
-    currentEl.classList.add("turbo-refresh-exit")
+    currentEl.classList.add(exitClass)
     currentEl.addEventListener("animationend", () => {
       currentEl.remove()
     }, { once: true })
@@ -135,15 +141,17 @@ document.addEventListener("turbo:before-render", async (event) => {
 
   // If there are deletions, animate them BEFORE the morph
   if (deletions.length > 0) {
-    // Filter to only elements that want exit animation
-    const animatedDeletions = deletions.filter(el => !isAnimationDisabled(el, "exit"))
+    // Filter to only elements that want exit animation and get their classes
+    const animatedDeletions = deletions
+      .map(el => ({ el, exitClass: getAnimationClass(el, "exit", "turbo-refresh-exit") }))
+      .filter(({ exitClass }) => exitClass)
 
     if (animatedDeletions.length > 0) {
       event.preventDefault()
 
-      const animationPromises = animatedDeletions.map(el => {
+      const animationPromises = animatedDeletions.map(({ el, exitClass }) => {
         return new Promise(resolve => {
-          el.classList.add("turbo-refresh-exit")
+          el.classList.add(exitClass)
           el.addEventListener("animationend", () => {
             el.remove()
             resolve()

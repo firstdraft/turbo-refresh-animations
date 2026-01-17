@@ -141,6 +141,19 @@ When the version changes during a broadcast, the element flashes with the change
 }
 ```
 
+### Custom animation classes per element
+
+Use a different animation class for specific elements:
+
+```erb
+<div id="<%= dom_id(item) %>"
+     data-turbo-refresh-animate
+     data-turbo-refresh-enter="my-custom-enter"
+     data-turbo-refresh-exit="my-custom-exit">
+  <!-- Uses my-custom-enter and my-custom-exit instead of defaults -->
+</div>
+```
+
 ### Disable specific animations
 
 Opt out of individual animation types per element:
@@ -154,6 +167,8 @@ Opt out of individual animation types per element:
 ```
 
 Options: `data-turbo-refresh-enter-off`, `data-turbo-refresh-exit-off`, `data-turbo-refresh-change-off`
+
+Note: `-off` attributes take precedence over custom class attributes.
 
 ### Define your own animations
 
@@ -205,6 +220,9 @@ The included CSS provides these defaults:
 |-----------|---------|
 | `id` | Element identifier (required) |
 | `data-turbo-refresh-animate` | Opt-in element for animations |
+| `data-turbo-refresh-enter="class"` | Custom enter animation class |
+| `data-turbo-refresh-change="class"` | Custom change animation class |
+| `data-turbo-refresh-exit="class"` | Custom exit animation class |
 | `data-turbo-refresh-enter-off` | Disable enter animation |
 | `data-turbo-refresh-change-off` | Disable change animation |
 | `data-turbo-refresh-exit-off` | Disable exit animation |
