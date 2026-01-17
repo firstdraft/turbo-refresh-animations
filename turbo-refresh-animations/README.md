@@ -154,23 +154,18 @@ Note: protected elements can temporarily be in a different "view state" than the
 
 ## Customization
 
-### Override colors via CSS variables
+### Override via CSS variables
 
 ```css
 :root {
-  /* Box shadow colors */
-  --turbo-refresh-enter-bg: #D1E7DD;     /* green inner */
-  --turbo-refresh-enter-glow: #28a745;   /* green outer glow */
-  --turbo-refresh-exit-bg: #F8D7DA;      /* red inner */
-  --turbo-refresh-exit-glow: #dc3545;    /* red outer glow */
-  --turbo-refresh-change-bg: #FFF3CD;    /* yellow inner */
-  --turbo-refresh-change-glow: #ffc107;  /* yellow outer glow */
+  /* Change animation color */
+  --turbo-refresh-change-color: #FFF3CD;  /* yellow background flash */
 
   /* Timing */
-  --turbo-refresh-enter-duration: 600ms;
-  --turbo-refresh-change-duration: 600ms;
-  --turbo-refresh-exit-duration: 400ms;
-  --turbo-refresh-easing: ease-in-out;
+  --turbo-refresh-enter-duration: 300ms;
+  --turbo-refresh-exit-duration: 300ms;
+  --turbo-refresh-change-duration: 800ms;
+  --turbo-refresh-easing: ease-out;
 }
 ```
 
@@ -187,21 +182,22 @@ Use a different animation class for specific elements:
 </div>
 ```
 
-### Disable specific animations
+### Enable specific animations
 
-Opt out of individual animation types per element:
+By default, `data-turbo-refresh-animate` enables all three animation types. Specify a comma-separated list to enable only certain types:
 
 ```erb
-<div id="<%= dom_id(item) %>"
-     data-turbo-refresh-animate
-     data-turbo-refresh-enter-off>
-  <!-- No enter animation, but exit and change still work -->
-</div>
+<%# Only animate exits (no enter or change) %>
+<div id="<%= dom_id(item) %>" data-turbo-refresh-animate="exit">
+
+<%# Animate enter and exit (no change) %>
+<div id="<%= dom_id(item) %>" data-turbo-refresh-animate="enter,exit">
+
+<%# All animations (default) %>
+<div id="<%= dom_id(item) %>" data-turbo-refresh-animate>
 ```
 
-Options: `data-turbo-refresh-enter-off`, `data-turbo-refresh-exit-off`, `data-turbo-refresh-change-off`
-
-Note: `-off` attributes take precedence over custom class attributes.
+Options: `enter`, `exit`, `change`
 
 ### Define your own animations
 
@@ -241,29 +237,7 @@ You can override the default classes or use custom class names per element.
 }
 ```
 
-#### Example: Fade in/out (from [animate.css](https://animate.style/))
-
-```css
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-.fadeIn {
-  animation: fadeIn 0.5s ease-out;
-}
-
-@keyframes fadeOut {
-  from { opacity: 1; }
-  to   { opacity: 0; }
-}
-
-.fadeOut {
-  animation: fadeOut 0.5s ease-out forwards;
-}
-```
-
-#### Example: Slide in/out (from [animate.css](https://animate.style/))
+#### Example: Slide in/out
 
 ```css
 @keyframes slideInDown {
@@ -308,13 +282,11 @@ Use custom classes per element:
 
 ### Default animations
 
-The included CSS provides box-shadow glow effects via `::after` pseudo-elements:
+The included CSS provides simple, unobtrusive animations:
 
-- **Enter**: Green glow (`--turbo-refresh-enter-duration`, default 600ms)
-- **Change**: Yellow glow (`--turbo-refresh-change-duration`, default 600ms)
-- **Exit**: Red glow with fade out (`--turbo-refresh-exit-duration`, default 400ms)
-
-The `::after` overlay approach avoids overwriting the element's own `box-shadow` or `z-index`. Elements get `position: relative` so the overlay can position correctly. If your element already uses `::after`, consider using custom animation classes.
+- **Enter**: Fade in (`--turbo-refresh-enter-duration`, default 300ms)
+- **Exit**: Fade out (`--turbo-refresh-exit-duration`, default 300ms)
+- **Change**: Yellow background flash (`--turbo-refresh-change-duration`, default 800ms)
 
 Animations automatically reduce for users with `prefers-reduced-motion: reduce`.
 
@@ -323,13 +295,10 @@ Animations automatically reduce for users with `prefers-reduced-motion: reduce`.
 | Attribute | Purpose |
 |-----------|---------|
 | `id` | Element identifier (required) |
-| `data-turbo-refresh-animate` | Opt-in element for animations |
+| `data-turbo-refresh-animate` | Opt-in for animations (all types), or `="enter,exit,change"` for specific types |
 | `data-turbo-refresh-enter="class"` | Custom enter animation class |
 | `data-turbo-refresh-change="class"` | Custom change animation class |
 | `data-turbo-refresh-exit="class"` | Custom exit animation class |
-| `data-turbo-refresh-enter-off` | Disable enter animation |
-| `data-turbo-refresh-change-off` | Disable change animation |
-| `data-turbo-refresh-exit-off` | Disable exit animation |
 | `data-turbo-stream-refresh-permanent` | Protect element during broadcast morphs |
 | `data-turbo-refresh-version` | Override change detection (used instead of `textContent`, e.g. `item.cache_key_with_version`) |
 

@@ -73,8 +73,13 @@ document.addEventListener("turbo:before-cache", () => {
 })
 
 function getAnimationClass(el, animType, defaultClass) {
-  // Check if disabled via data-turbo-refresh-{type}-off
-  if (el.hasAttribute(`data-turbo-refresh-${animType}-off`)) return null
+  // Check if animation type is enabled via data-turbo-refresh-animate value
+  // Empty value or no value = all enabled; comma-separated list = only those types
+  const animateValue = el.getAttribute("data-turbo-refresh-animate")
+  if (animateValue !== null && animateValue !== "") {
+    const enabledTypes = animateValue.split(",").map(s => s.trim().toLowerCase())
+    if (!enabledTypes.includes(animType)) return null
+  }
 
   // Check for custom class via data-turbo-refresh-{type}="my-class"
   const customClass = el.getAttribute(`data-turbo-refresh-${animType}`)

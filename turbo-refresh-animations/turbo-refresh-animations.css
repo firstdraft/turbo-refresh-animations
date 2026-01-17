@@ -1,102 +1,41 @@
 /*
  * Turbo Refresh Animations - Default CSS Classes
- * Uses ::after overlay for glow effects without affecting element's own box-shadow
  */
 
-/* Enter (green glow) */
+/* Enter - fade in */
 .turbo-refresh-enter {
-  position: relative;
-  z-index: 1;
-  overflow: visible;
-  animation: turbo-refresh-enter-hold var(--turbo-refresh-enter-duration, 600ms) var(--turbo-refresh-easing, ease-in-out);
+  animation: turbo-refresh-enter var(--turbo-refresh-enter-duration, 300ms) var(--turbo-refresh-easing, ease-out);
 }
 
-.turbo-refresh-enter::after {
-  content: "";
-  position: absolute;
-  inset: -4px;
-  border-radius: inherit;
-  box-shadow: 0 0 0 4px var(--turbo-refresh-enter-bg, #D1E7DD), 0 0 12px var(--turbo-refresh-enter-glow, #28a745);
-  pointer-events: none;
-  opacity: 0;
-  animation: turbo-refresh-enter-glow var(--turbo-refresh-enter-duration, 600ms) var(--turbo-refresh-easing, ease-in-out);
+@keyframes turbo-refresh-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-/* Dummy keyframes so JS can detect animation duration */
-@keyframes turbo-refresh-enter-hold {
-  from, to { opacity: 1; }
-}
-
-@keyframes turbo-refresh-enter-glow {
-  0%, 100% { opacity: 0; }
-  20% { opacity: 1; }
-}
-
-/* Exit (red glow + fade) */
+/* Exit - fade out */
 .turbo-refresh-exit {
-  position: relative;
-  z-index: 1;
-  overflow: visible;
-  animation: turbo-refresh-exit-fade var(--turbo-refresh-exit-duration, 400ms) var(--turbo-refresh-easing, ease-out) forwards;
+  animation: turbo-refresh-exit var(--turbo-refresh-exit-duration, 300ms) var(--turbo-refresh-easing, ease-out) forwards;
 }
 
-.turbo-refresh-exit::after {
-  content: "";
-  position: absolute;
-  inset: -4px;
-  border-radius: inherit;
-  box-shadow: 0 0 0 4px var(--turbo-refresh-exit-bg, #F8D7DA), 0 0 12px var(--turbo-refresh-exit-glow, #dc3545);
-  pointer-events: none;
-  opacity: 1;
-  animation: turbo-refresh-exit-glow var(--turbo-refresh-exit-duration, 400ms) var(--turbo-refresh-easing, ease-out) forwards;
-}
-
-@keyframes turbo-refresh-exit-fade {
+@keyframes turbo-refresh-exit {
   from { opacity: 1; }
   to { opacity: 0; }
 }
 
-@keyframes turbo-refresh-exit-glow {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
-/* Change (yellow glow) */
+/* Change - yellow background flash */
 .turbo-refresh-change {
-  position: relative;
-  z-index: 1;
-  overflow: visible;
-  animation: turbo-refresh-change-hold var(--turbo-refresh-change-duration, 600ms) var(--turbo-refresh-easing, ease-in-out);
+  animation: turbo-refresh-change var(--turbo-refresh-change-duration, 800ms) var(--turbo-refresh-easing, ease-out);
 }
 
-.turbo-refresh-change::after {
-  content: "";
-  position: absolute;
-  inset: -4px;
-  border-radius: inherit;
-  box-shadow: 0 0 0 4px var(--turbo-refresh-change-bg, #FFF3CD), 0 0 12px var(--turbo-refresh-change-glow, #ffc107);
-  pointer-events: none;
-  opacity: 0;
-  animation: turbo-refresh-change-glow var(--turbo-refresh-change-duration, 600ms) var(--turbo-refresh-easing, ease-in-out);
-}
-
-/* Dummy keyframes so JS can detect animation duration */
-@keyframes turbo-refresh-change-hold {
-  from, to { opacity: 1; }
-}
-
-@keyframes turbo-refresh-change-glow {
-  0%, 100% { opacity: 0; }
-  20% { opacity: 1; }
+@keyframes turbo-refresh-change {
+  from { background-color: var(--turbo-refresh-change-color, #FFF3CD); }
+  to { background-color: inherit; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .turbo-refresh-enter,
   .turbo-refresh-change,
-  .turbo-refresh-exit,
-  .turbo-refresh-enter::after,
-  .turbo-refresh-change::after,
-  .turbo-refresh-exit::after {
+  .turbo-refresh-exit {
     animation-duration: 1ms;
     animation-iteration-count: 1;
   }
