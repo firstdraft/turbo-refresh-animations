@@ -3,11 +3,11 @@
 CSS class-based animations for [Turbo](https://turbo.hotwired.dev/) page refresh morphs. Automatically animates elements when they're created, updated, or deleted during Turbo morphs.
 
 **Features:**
-- 🎬 Animate elements on create, update, and delete
-- 🛡️ Protect forms from being cleared during broadcast refreshes
-- 🎨 Use your own CSS animation classes
-- 📦 Zero dependencies (just requires Turbo 8+)
-- ⚡ Works with importmaps, esbuild, webpack, or any bundler
+- Zero configuration - works automatically with elements that have `id` attributes
+- Animate creates, updates, and deletes
+- Protect forms from being cleared during broadcast refreshes
+- Customize animations via CSS or data attributes
+- Works with importmaps, esbuild, webpack, or any bundler
 
 ## Installation
 
@@ -25,13 +25,7 @@ npm install turbo-refresh-animations
 yarn add turbo-refresh-animations
 ```
 
-### With CDN
-
-```html
-<script type="module" src="https://cdn.jsdelivr.net/npm/turbo-refresh-animations"></script>
-```
-
-## Setup
+## Quick Start
 
 ### 1. Import the library
 
@@ -41,9 +35,14 @@ import "@hotwired/turbo-rails"
 import "turbo-refresh-animations"
 ```
 
-That's it! The library auto-initializes when imported.
+### 2. Import the CSS
 
-### 2. Enable morphing in your layout
+```css
+/* app/assets/stylesheets/application.css */
+@import "turbo-refresh-animations/style.css";
+```
+
+### 3. Enable morphing in your layout
 
 ```erb
 <%# app/views/layouts/application.html.erb %>
@@ -52,67 +51,63 @@ That's it! The library auto-initializes when imported.
 </head>
 ```
 
-### 3. Add CSS animations
-
-Use the included example styles or write your own:
-
-```css
-/* Option A: Import the included styles */
-@import "turbo-refresh-animations/style.css";
-
-/* Option B: Write your own */
-@keyframes flash-green {
-  0%, 100% { box-shadow: none; }
-  20% { box-shadow: 0 0 0 4px #d4edda, 0 0 12px #28a745; }
-}
-
-.flash-green {
-  animation: flash-green 400ms ease-in-out;
-}
-```
-
-### 4. Mark elements to animate
-
-```erb
-<div id="<%= dom_id(item) %>"
-     data-turbo-refresh-id="<%= dom_id(item) %>"
-     data-turbo-refresh-enter-class="flash-green"
-     data-turbo-refresh-update-class="flash-yellow"
-     data-turbo-refresh-exit-class="fade-out">
-  <%= item.title %>
-</div>
-```
-
-## Data Attributes
-
-| Attribute | Required | Description |
-|-----------|----------|-------------|
-| `data-turbo-refresh-id` | Yes | Unique identifier to track element across morphs |
-| `data-turbo-refresh-version` | No | Version value for change detection (e.g., `updated_at.to_i`) |
-| `data-turbo-refresh-permanent` | No | Protect element during broadcast morphs |
-| `data-turbo-refresh-enter-class` | No | CSS class to apply when element is created |
-| `data-turbo-refresh-update-class` | No | CSS class to apply when element is modified |
-| `data-turbo-refresh-exit-class` | No | CSS class to apply when element is deleted |
-
-## Examples
-
-### Basic item with all animations
+### 4. Use `id` attributes on your elements
 
 ```erb
 <%# app/views/items/_item.html.erb %>
-<div id="<%= dom_id(item) %>"
-     data-turbo-refresh-id="<%= dom_id(item) %>"
-     data-turbo-refresh-enter-class="flash-green"
-     data-turbo-refresh-update-class="flash-yellow"
-     data-turbo-refresh-exit-class="fade-out">
+<div id="<%= dom_id(item) %>">
   <%= item.title %>
 </div>
 ```
 
-### Protected form (won't clear during broadcasts)
+That's it! Elements will automatically animate when created, updated, or deleted.
+
+## How It Works
+
+The library tracks elements by their `id` attribute and detects changes during Turbo morphs:
+
+| Animation | Trigger | Default Class |
+|-----------|---------|---------------|
+| Enter | Element appears (new `id` in DOM) | `turbo-refresh-enter` |
+| Update | Element content changes | `turbo-refresh-update` |
+| Exit | Element removed (`id` no longer in DOM) | `turbo-refresh-exit` |
+
+## Customization
+
+### Override animation classes per element
 
 ```erb
-<%# app/views/items/_form.html.erb %>
+<div id="<%= dom_id(item) %>"
+     data-turbo-refresh-enter-class="my-custom-enter"
+     data-turbo-refresh-update-class="my-custom-update"
+     data-turbo-refresh-exit-class="my-custom-exit">
+  <%= item.title %>
+</div>
+```
+
+### Define your own default animations
+
+Instead of importing the provided CSS, define your own:
+
+```css
+.turbo-refresh-enter {
+  animation: my-enter-animation 300ms ease-out;
+}
+
+.turbo-refresh-update {
+  animation: my-update-animation 300ms ease-out;
+}
+
+.turbo-refresh-exit {
+  animation: my-exit-animation 300ms ease-out forwards;
+}
+```
+
+### Protect forms from broadcast morphs
+
+Add `data-turbo-refresh-permanent` to forms that should be preserved when other users trigger refreshes:
+
+```erb
 <div id="new_item_form" data-turbo-refresh-permanent>
   <%= form_with model: [list, item] do |f| %>
     <%= f.text_field :title %>
@@ -121,74 +116,30 @@ Use the included example styles or write your own:
 </div>
 ```
 
-### Edit form with update animation
+The form will be protected during broadcast refreshes but will still update normally after its own submission.
 
-When another user modifies the same item, the edit form flashes to alert the user:
+## Data Attributes Reference
 
-```erb
-<%# app/views/items/_edit_form.html.erb %>
-<div id="<%= dom_id(item) %>"
-     data-turbo-refresh-id="<%= dom_id(item) %>"
-     data-turbo-refresh-version="<%= item.updated_at.to_i %>"
-     data-turbo-refresh-permanent
-     data-turbo-refresh-update-class="flash-yellow">
-  <%= form_with model: [item.list, item] do |f| %>
-    <%= f.text_field :title %>
-    <%= f.submit "Save" %>
-  <% end %>
-</div>
-```
-
-### Using `data-turbo-refresh-version`
-
-Use `data-turbo-refresh-version` to detect when underlying data has changed. The simplest approach is to use the record's `updated_at` timestamp:
-
-```erb
-data-turbo-refresh-version="<%= item.updated_at.to_i %>"
-```
-
-This triggers update animations only when the database record has actually been modified.
-
-## How It Works
-
-1. **On `turbo:before-render`**: Compares old and new DOM to detect creates, updates, and deletes
-2. **On `turbo:before-morph-element`**: Protects permanent elements and handles exit animations
-3. **On `turbo:render`**: Applies enter and update animations to the new DOM
-
-### Animation Timing
-
-- **Enter/Update**: Applied after the DOM updates (element is new)
-- **Exit**: Applied before removal, element is removed after `animationend`
-- **Protected elements**: Animated immediately (element doesn't change)
-
-## Controller Pattern
-
-```ruby
-class ItemsController < ApplicationController
-  def create
-    @item = @list.items.build(item_params)
-    if @item.save
-      redirect_to @list, status: :see_other  # Triggers morph with animations
-    else
-      render turbo_stream: turbo_stream.replace("new_item_form", ...)
-    end
-  end
-
-  def destroy
-    @item.destroy
-    redirect_to @list, status: :see_other  # Exit animation plays first
-  end
-end
-```
+| Attribute | Purpose |
+|-----------|---------|
+| `id` | Element identifier (required for animations) |
+| `data-turbo-refresh-id` | Override element identifier (optional) |
+| `data-turbo-refresh-permanent` | Protect element during broadcast morphs |
+| `data-turbo-refresh-enter-class` | Override enter animation class |
+| `data-turbo-refresh-update-class` | Override update animation class |
+| `data-turbo-refresh-exit-class` | Override exit animation class |
 
 ## Included CSS Classes
 
-Import `turbo-refresh-animations/style.css` for these ready-to-use classes:
+The `style.css` file includes these ready-to-use classes:
 
 | Class | Animation | Good for |
 |-------|-----------|----------|
-| `turbo-refresh-flash-green` | Green glow | Creates |
-| `turbo-refresh-flash-yellow` | Yellow glow | Updates |
+| `turbo-refresh-enter` | Green flash (default) | Creates |
+| `turbo-refresh-update` | Yellow flash (default) | Updates |
+| `turbo-refresh-exit` | Fade out (default) | Deletes |
+| `turbo-refresh-flash-green` | Green flash | Creates |
+| `turbo-refresh-flash-yellow` | Yellow flash | Updates |
 | `turbo-refresh-fade-out` | Fade out | Deletes |
 | `turbo-refresh-slide-in` | Slide down + fade in | Creates |
 | `turbo-refresh-slide-out` | Slide down + fade out | Deletes |

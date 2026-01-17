@@ -5,14 +5,37 @@
  * Automatically animates elements on create, update, and delete.
  * Protects forms from being cleared during broadcast refreshes.
  *
- * Data attributes:
- *   data-turbo-refresh-id="unique-id"      - Identifies element for tracking
- *   data-turbo-refresh-version="value"     - Version to compare (e.g., updated_at timestamp)
+ * Default behavior:
+ *   - Elements with `id` attributes are automatically tracked
+ *   - Default animation classes: turbo-refresh-enter, turbo-refresh-update, turbo-refresh-exit
+ *
+ * Optional data attributes for customization:
+ *   data-turbo-refresh-id="unique-id"      - Override element identifier (default: uses id attribute)
  *   data-turbo-refresh-permanent           - Protect element during broadcast morphs
- *   data-turbo-refresh-enter-class="cls"   - CSS class for new elements
- *   data-turbo-refresh-update-class="cls"  - CSS class for modified elements
- *   data-turbo-refresh-exit-class="cls"    - CSS class for removed elements
+ *   data-turbo-refresh-enter-class="cls"   - Override enter animation class
+ *   data-turbo-refresh-update-class="cls"  - Override update animation class
+ *   data-turbo-refresh-exit-class="cls"    - Override exit animation class
  */
+
+// Default animation class names
+const DEFAULT_ENTER_CLASS = "turbo-refresh-enter"
+const DEFAULT_UPDATE_CLASS = "turbo-refresh-update"
+const DEFAULT_EXIT_CLASS = "turbo-refresh-exit"
+
+// ========== PAGE TRACKING ==========
+// Track whether we've rendered this page before to avoid animating
+// existing elements as "creates" on initial page navigation.
+
+let hasRenderedCurrentPage = false
+let lastRenderedUrl = null
+
+document.addEventListener("turbo:visit", (event) => {
+  const visitUrl = event.detail.url
+  // Only reset when navigating to a DIFFERENT page
+  if (lastRenderedUrl && visitUrl !== lastRenderedUrl) {
+    hasRenderedCurrentPage = false
+  }
+})
 
 // ========== FORM PROTECTION ==========
 // Protect elements with data-turbo-refresh-permanent during morphs,
@@ -32,19 +55,43 @@ document.addEventListener("turbo:submit-end", (event) => {
   }
 })
 
-// ========== DELETE ANIMATIONS ==========
+// ========== HELPER FUNCTIONS ==========
 
-let pendingDeletions = new Map()
+function getElementId(el) {
+  return el.dataset?.turboRefreshId || el.id
+}
 
-// For submitter: intercept click, animate, then proceed
-// Use capture phase to run before Turbo's handler
+function getEnterClass(el) {
+  return el.dataset?.turboRefreshEnterClass || DEFAULT_ENTER_CLASS
+}
+
+function getUpdateClass(el) {
+  return el.dataset?.turboRefreshUpdateClass || DEFAULT_UPDATE_CLASS
+}
+
+function getExitClass(el) {
+  return el.dataset?.turboRefreshExitClass || DEFAULT_EXIT_CLASS
+}
+
+function applyAnimation(el, animClass) {
+  if (!animClass) return
+  el.classList.add(animClass)
+  el.addEventListener("animationend", () => el.classList.remove(animClass), {
+    once: true,
+  })
+}
+
+// ========== DELETE ANIMATIONS (SUBMITTER) ==========
+// For the user clicking delete: intercept click, animate, then proceed.
+// Uses capture phase to run before Turbo's handler.
+
 document.addEventListener(
   "click",
   (event) => {
     const link = event.target.closest('a[data-turbo-method="delete"]')
     if (!link) return
 
-    const item = link.closest("[data-turbo-refresh-exit-class]")
+    const item = link.closest("[id]")
     if (!item) return
 
     // Skip if animation already done (allow the real click through)
@@ -53,7 +100,7 @@ document.addEventListener(
     event.preventDefault()
     event.stopPropagation()
 
-    const animClass = item.dataset.turboRefreshExitClass
+    const animClass = getExitClass(item)
     item.classList.add(animClass)
     item.addEventListener(
       "animationend",
@@ -67,115 +114,134 @@ document.addEventListener(
   { capture: true }
 )
 
-// ========== MORPH PROTECTION ==========
+// ========== MORPH HANDLING ==========
+// Use turbo:before-morph-element to detect updates and deletes,
+// piggybacking on Idiomorph's element matching.
+
+let pendingUpdates = new Map()
+let pendingDeletions = new Map()
 
 document.addEventListener("turbo:before-morph-element", (event) => {
   const el = event.target
+  const { newElement } = event.detail
+  const id = getElementId(el)
 
   // Protect permanent elements, unless it's the form we're submitting
   if (el.hasAttribute("data-turbo-refresh-permanent")) {
     if (el.id !== submittingFormId) {
       event.preventDefault()
+
+      // If this protected element has a pending update animation, apply it now
+      if (pendingUpdates.has(id)) {
+        applyAnimation(el, pendingUpdates.get(id))
+        pendingUpdates.delete(id)
+      }
       return
     }
   }
 
-  // For other clients: animate deletion before removal
-  const id = el.dataset?.turboRefreshId
-  const exitClass = el.dataset?.turboRefreshExitClass
-  if (id && exitClass && pendingDeletions.has(id)) {
+  // DELETE: newElement is undefined (Idiomorph is removing this element)
+  if (newElement === undefined && id) {
     event.preventDefault()
-    el.classList.add(exitClass)
+    const animClass = getExitClass(el)
+    el.classList.add(animClass)
     el.addEventListener(
       "animationend",
-      () => {
-        el.remove()
-        pendingDeletions.delete(id)
-      },
+      () => el.remove(),
       { once: true }
     )
+    return
+  }
+
+  // UPDATE: both elements exist, queue animation for after render
+  if (id && newElement && pendingUpdates.has(id)) {
+    // Animation will be applied in turbo:render
   }
 })
 
-document.addEventListener("turbo:render", () => {
-  submittingFormId = null
-})
-
-// ========== ANIMATION DETECTION ==========
+// ========== CREATE & UPDATE DETECTION ==========
+// Detect creates via DOM comparison in turbo:before-render.
+// Detect updates by comparing element content.
 
 let pendingAnimations = []
-
-function applyAnimation(el, animClass) {
-  el.classList.add(animClass)
-  el.addEventListener("animationend", () => el.classList.remove(animClass), {
-    once: true,
-  })
-}
 
 document.addEventListener("turbo:before-render", (event) => {
   if (!event.detail.newBody) return
 
-  // Build maps of ALL elements by their turbo-refresh-id
+  pendingAnimations = []
+  pendingUpdates = new Map()
+  pendingDeletions = new Map()
+
+  // Skip all animation detection on initial page navigation
+  if (!hasRenderedCurrentPage) return
+
+  // Build maps of elements by their id
   const oldMap = new Map()
-  document.querySelectorAll("[data-turbo-refresh-id]").forEach((el) => {
-    oldMap.set(el.dataset.turboRefreshId, {
-      version: el.dataset.turboRefreshVersion,
-      el: el,
-      isPermanent: el.hasAttribute("data-turbo-refresh-permanent"),
-    })
+  document.querySelectorAll("[id]").forEach((el) => {
+    const id = getElementId(el)
+    if (id) {
+      oldMap.set(id, {
+        el: el,
+        innerHTML: el.innerHTML,
+        isPermanent: el.hasAttribute("data-turbo-refresh-permanent"),
+      })
+    }
   })
 
   const newMap = new Map()
-  event.detail.newBody.querySelectorAll("[data-turbo-refresh-id]").forEach((el) => {
-    newMap.set(el.dataset.turboRefreshId, {
-      version: el.dataset.turboRefreshVersion,
-      enterClass: el.dataset.turboRefreshEnterClass,
-      updateClass: el.dataset.turboRefreshUpdateClass,
-    })
-  })
-
-  pendingAnimations = []
-  pendingDeletions = new Map()
-
-  // Deletions: in old but not new
-  oldMap.forEach((oldData, id) => {
-    if (!newMap.has(id) && oldData.el.dataset.turboRefreshExitClass) {
-      pendingDeletions.set(id, true)
+  event.detail.newBody.querySelectorAll("[id]").forEach((el) => {
+    const id = getElementId(el)
+    if (id) {
+      newMap.set(id, {
+        el: el,
+        innerHTML: el.innerHTML,
+      })
     }
   })
 
   // Creates: in new but not old
   newMap.forEach((newData, id) => {
-    if (!oldMap.has(id) && newData.enterClass) {
-      pendingAnimations.push({ id, animClass: newData.enterClass })
+    if (!oldMap.has(id)) {
+      pendingAnimations.push({ id, animClass: getEnterClass(newData.el) })
     }
   })
 
-  // Modifications: in both but version differs
+  // Updates: in both but content differs
   oldMap.forEach((oldData, id) => {
     if (newMap.has(id)) {
       const newData = newMap.get(id)
-      // Only compare if both have versions; skip if either is missing
-      if (oldData.version && newData.version && oldData.version !== newData.version && newData.updateClass) {
-        // Protected elements that won't morph: animate immediately
+      if (oldData.innerHTML !== newData.innerHTML) {
+        const animClass = getUpdateClass(newData.el)
         if (oldData.isPermanent && oldData.el.id !== submittingFormId) {
-          applyAnimation(oldData.el, newData.updateClass)
+          // Protected element won't morph - animate immediately
+          applyAnimation(oldData.el, animClass)
         } else {
-          // Element will be morphed: queue for after render
-          pendingAnimations.push({ id, animClass: newData.updateClass })
+          // Queue for turbo:before-morph-element and turbo:render
+          pendingUpdates.set(id, animClass)
+          pendingAnimations.push({ id, animClass })
         }
       }
     }
   })
 })
 
+// ========== APPLY ANIMATIONS AFTER RENDER ==========
+
 document.addEventListener("turbo:render", () => {
-  // Apply pending animations after DOM has updated
+  // Mark page as rendered for same-page refresh detection
+  hasRenderedCurrentPage = true
+  lastRenderedUrl = window.location.href
+
+  // Clear form submission tracking
+  submittingFormId = null
+
+  // Apply pending animations to newly rendered elements
   pendingAnimations.forEach(({ id, animClass }) => {
-    const el = document.querySelector(`[data-turbo-refresh-id="${id}"]`)
+    const el = document.querySelector(`[id="${id}"], [data-turbo-refresh-id="${id}"]`)
     if (el) {
       applyAnimation(el, animClass)
     }
   })
   pendingAnimations = []
+  pendingUpdates = new Map()
 })

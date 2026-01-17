@@ -1,8 +1,13 @@
 /**
- * Turbo Refresh Animations - Example Styles
+ * Turbo Refresh Animations - Default Styles
  *
- * These are example animations you can use or customize.
- * Import this file or copy the classes you need into your own stylesheet.
+ * Import this file to get the default animations working out of the box.
+ * You can override the default classes or define your own.
+ *
+ * Default class names (applied automatically):
+ *   .turbo-refresh-enter  - Applied to newly created elements
+ *   .turbo-refresh-update - Applied to modified elements
+ *   .turbo-refresh-exit   - Applied to elements being removed
  */
 
 /* ========== KEYFRAMES ========== */
@@ -87,4 +92,24 @@
 /* Slide out - alternative for deletions */
 .turbo-refresh-slide-out {
   animation: turbo-refresh-slide-out 300ms ease-out forwards;
+}
+
+/* ========== DEFAULT CLASSES ========== */
+/* These are the classes applied automatically by the library. */
+/* Override these or use data-turbo-refresh-*-class for custom animations. */
+
+.turbo-refresh-enter {
+  animation: turbo-refresh-flash-green 400ms ease-in-out;
+  position: relative;
+  z-index: 1;
+}
+
+.turbo-refresh-update {
+  animation: turbo-refresh-flash-yellow 400ms ease-in-out;
+  position: relative;
+  z-index: 1;
+}
+
+.turbo-refresh-exit {
+  animation: turbo-refresh-fade-out 300ms ease-out forwards;
 }
