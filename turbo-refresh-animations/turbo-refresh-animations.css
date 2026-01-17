@@ -1,35 +1,42 @@
 /*
  * Turbo Refresh Animations - Default CSS Classes
+ * Uses box-shadow for visibility without affecting layout
  */
 
-/* Enter (green) */
+/* Enter (green glow) */
 @keyframes turbo-refresh-enter {
-  from { background-color: var(--turbo-refresh-enter-bg, #D1E7DD); }
-  to   { background-color: inherit; }
+  0%, 100% { box-shadow: none; }
+  20% { box-shadow: 0 0 0 4px var(--turbo-refresh-enter-bg, #D1E7DD), 0 0 12px var(--turbo-refresh-enter-glow, #28a745); }
 }
 
 .turbo-refresh-enter {
-  animation: turbo-refresh-enter var(--turbo-refresh-enter-duration, 1.2s) var(--turbo-refresh-easing, ease-out);
+  position: relative;
+  z-index: 1;
+  animation: turbo-refresh-enter var(--turbo-refresh-enter-duration, 600ms) var(--turbo-refresh-easing, ease-in-out);
 }
 
-/* Exit (red) */
+/* Exit (red glow + fade) */
 @keyframes turbo-refresh-exit {
-  from { background-color: var(--turbo-refresh-exit-bg, #F8D7DA); opacity: 1; }
-  to   { background-color: inherit; opacity: 0; }
+  0% { box-shadow: 0 0 0 4px var(--turbo-refresh-exit-bg, #F8D7DA), 0 0 12px var(--turbo-refresh-exit-glow, #dc3545); opacity: 1; }
+  100% { box-shadow: none; opacity: 0; }
 }
 
 .turbo-refresh-exit {
-  animation: turbo-refresh-exit var(--turbo-refresh-exit-duration, 0.6s) var(--turbo-refresh-easing, ease-out) forwards;
+  position: relative;
+  z-index: 1;
+  animation: turbo-refresh-exit var(--turbo-refresh-exit-duration, 400ms) var(--turbo-refresh-easing, ease-out) forwards;
 }
 
-/* Change (yellow) */
+/* Change (yellow glow) */
 @keyframes turbo-refresh-change {
-  from { background-color: var(--turbo-refresh-change-bg, #FFF3CD); }
-  to   { background-color: inherit; }
+  0%, 100% { box-shadow: none; }
+  20% { box-shadow: 0 0 0 4px var(--turbo-refresh-change-bg, #FFF3CD), 0 0 12px var(--turbo-refresh-change-glow, #ffc107); }
 }
 
 .turbo-refresh-change {
-  animation: turbo-refresh-change var(--turbo-refresh-change-duration, 1.2s) var(--turbo-refresh-easing, ease-out);
+  position: relative;
+  z-index: 1;
+  animation: turbo-refresh-change var(--turbo-refresh-change-duration, 600ms) var(--turbo-refresh-easing, ease-in-out);
 }
 
 @media (prefers-reduced-motion: reduce) {
