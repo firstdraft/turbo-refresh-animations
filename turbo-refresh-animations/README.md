@@ -141,21 +141,53 @@ When the version changes during a broadcast, the element flashes with the change
 }
 ```
 
+### Disable specific animations
+
+Opt out of individual animation types per element:
+
+```erb
+<div id="<%= dom_id(item) %>"
+     data-turbo-refresh-animate
+     data-turbo-refresh-enter="none">
+  <!-- No enter animation, but exit and change still work -->
+</div>
+```
+
+Options: `data-turbo-refresh-enter="none"`, `data-turbo-refresh-exit="none"`, `data-turbo-refresh-change="none"`
+
 ### Define your own animations
 
-Override the default CSS classes:
+Override the default CSS classes. Here's an example using box-shadow glow effects:
 
 ```css
+/* Enter - green glow */
+@keyframes turbo-refresh-enter {
+  0%, 100% { box-shadow: none; }
+  20% { box-shadow: 0 0 0 4px #D1E7DD, 0 0 12px #28a745; }
+}
+
 .turbo-refresh-enter {
-  animation: my-enter-animation 300ms ease-out;
+  animation: turbo-refresh-enter 400ms ease-in-out;
+}
+
+/* Change - yellow glow */
+@keyframes turbo-refresh-change {
+  0%, 100% { box-shadow: none; }
+  20% { box-shadow: 0 0 0 4px #FFF3CD, 0 0 12px #ffc107; }
 }
 
 .turbo-refresh-change {
-  animation: my-change-animation 300ms ease-out;
+  animation: turbo-refresh-change 400ms ease-in-out;
+}
+
+/* Exit - fade out */
+@keyframes turbo-refresh-exit {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 .turbo-refresh-exit {
-  animation: my-exit-animation 300ms ease-out forwards;
+  animation: turbo-refresh-exit 300ms ease-out forwards;
 }
 ```
 
@@ -173,6 +205,9 @@ The included CSS provides these defaults:
 |-----------|---------|
 | `id` | Element identifier (required) |
 | `data-turbo-refresh-animate` | Opt-in element for animations |
+| `data-turbo-refresh-enter="none"` | Disable enter animation |
+| `data-turbo-refresh-change="none"` | Disable change animation |
+| `data-turbo-refresh-exit="none"` | Disable exit animation |
 | `data-turbo-stream-refresh-permanent` | Protect element during broadcast morphs |
 | `data-turbo-refresh-version` | Version string for change detection on protected elements |
 
