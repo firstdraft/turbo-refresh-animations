@@ -34,6 +34,31 @@ document.addEventListener("turbo:visit", (event) => {
   }
 })
 
+document.addEventListener("turbo:before-cache", () => {
+  document.querySelectorAll("[data-turbo-refresh-animate]").forEach(el => {
+    const timers = animationClassCleanupTimers.get(el)
+    if (timers) {
+      for (const timer of timers.values()) {
+        window.clearTimeout(timer)
+      }
+      timers.clear()
+    }
+
+    const animationClasses = new Set([
+      "turbo-refresh-enter",
+      "turbo-refresh-change",
+      "turbo-refresh-exit",
+      el.getAttribute("data-turbo-refresh-enter"),
+      el.getAttribute("data-turbo-refresh-change"),
+      el.getAttribute("data-turbo-refresh-exit")
+    ])
+
+    for (const className of animationClasses) {
+      if (className) el.classList.remove(className)
+    }
+  })
+})
+
 function getAnimationClass(el, animType, defaultClass) {
   // Check if disabled via data-turbo-refresh-{type}-off
   if (el.hasAttribute(`data-turbo-refresh-${animType}-off`)) return null
