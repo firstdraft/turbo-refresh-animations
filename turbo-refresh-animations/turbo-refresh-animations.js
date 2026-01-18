@@ -271,6 +271,10 @@ function expectedTransitionEndCount(el) {
   if (!style.transitionProperty || style.transitionProperty === "none") return 0
 
   const properties = style.transitionProperty.split(",").map(prop => prop.trim())
+  // "all" means we can't know which properties will change, so we can't reliably
+  // predict how many transitionend events will fire. Fall back to the timeout.
+  if (properties.some(prop => prop.toLowerCase() === "all")) return 0
+
   const durationsMs = parseCssTimeListMs(style.transitionDuration)
 
   let count = 0

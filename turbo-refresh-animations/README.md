@@ -209,6 +209,9 @@ Exit animations can be implemented with CSS transitions (not just keyframes). Th
 change a property with a non-zero transition duration (for example, opacity or transform). The
 element is removed after the transition ends (with a timeout fallback).
 
+For predictable timing, use explicit transition properties (e.g., `opacity, transform`) instead of
+`transition-property: all`.
+
 #### Example: Background color flash
 
 ```css
