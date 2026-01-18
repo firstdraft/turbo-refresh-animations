@@ -384,6 +384,9 @@ document.addEventListener("turbo:before-morph-element", (event) => {
   // - During same-page refresh morphs (preserve user state like open forms)
   // - EXCEPT the element initiating the refresh (form submit or link click within it)
   if (currentEl.hasAttribute("data-turbo-stream-refresh-permanent")) {
+    // If the element is being removed, allow Turbo to remove it normally.
+    if (newEl === undefined) return
+
     const isSubmitting = currentEl === submittingPermanentEl
     const isVisiting = currentEl === visitingPermanentEl
     const isInitiator = isSubmitting || isVisiting
@@ -401,17 +404,6 @@ document.addEventListener("turbo:before-morph-element", (event) => {
       }
       return
     }
-  }
-
-  // Handle DELETES (newElement undefined)
-  if (!currentEl.id || !currentEl.hasAttribute("data-turbo-refresh-animate")) return
-
-  if (newEl === undefined) {
-    const exitClass = getAnimationClass(currentEl, "exit", "turbo-refresh-exit")
-    if (!exitClass) return // Let Idiomorph remove it normally
-
-    event.preventDefault()
-    animateAndRemove(currentEl, exitClass)
   }
 })
 
