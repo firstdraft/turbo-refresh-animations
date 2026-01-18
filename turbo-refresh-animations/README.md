@@ -205,6 +205,10 @@ To explicitly disable animations on an element, use `data-turbo-refresh-animate=
 
 You can override the default classes or use custom class names per element.
 
+Exit animations can be implemented with CSS transitions (not just keyframes). The exit class should
+change a property with a non-zero transition duration (for example, opacity or transform). The
+element is removed after the transition ends (with a timeout fallback).
+
 #### Example: Background color flash
 
 ```css

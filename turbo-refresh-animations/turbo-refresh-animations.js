@@ -267,6 +267,24 @@ function expectedAnimationEndCount(el) {
   return count
 }
 
+function expectedTransitionEndCount(el) {
+  const style = window.getComputedStyle(el)
+  if (!style.transitionProperty || style.transitionProperty === "none") return 0
+
+  const properties = style.transitionProperty.split(",").map(prop => prop.trim())
+  const durationsMs = parseCssTimeListMs(style.transitionDuration)
+
+  let count = 0
+  for (let i = 0; i < properties.length; i++) {
+    const name = properties[i]
+    if (!name || name === "none") continue
+    const duration = durationsMs[i % durationsMs.length] || 0
+    if (duration > 0) count += 1
+  }
+
+  return count
+}
+
 function maxWaitMsForAnimationOrTransition(el) {
   const style = window.getComputedStyle(el)
   let maxMs = 0
@@ -310,6 +328,7 @@ function animateAndRemove(el, animClass) {
       if (timer) clearTimeout(timer)
       el.removeEventListener("animationend", onEnd)
       el.removeEventListener("animationcancel", onCancel)
+      el.removeEventListener("transitionend", onTransitionEnd)
       el.removeEventListener("transitioncancel", onCancel)
 
       el.remove()
@@ -329,13 +348,22 @@ function animateAndRemove(el, animClass) {
       finish()
     }
 
+    const onTransitionEnd = (event) => {
+      if (event.target !== el) return
+      endedCount += 1
+      if (expectedEnds > 0 && endedCount >= expectedEnds) {
+        finish()
+      }
+    }
+
     el.addEventListener("animationend", onEnd)
     el.addEventListener("animationcancel", onCancel)
+    el.addEventListener("transitionend", onTransitionEnd)
     el.addEventListener("transitioncancel", onCancel)
 
     el.classList.add(animClass)
 
-    expectedEnds = expectedAnimationEndCount(el)
+    expectedEnds = expectedAnimationEndCount(el) + expectedTransitionEndCount(el)
     const waitMs = maxWaitMsForAnimationOrTransition(el)
 
     if (expectedEnds === 0 && waitMs === 0) {
