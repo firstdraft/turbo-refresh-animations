@@ -4,9 +4,9 @@
 if (!window.TurboRefreshAnimationsInstalled) {
   window.TurboRefreshAnimationsInstalled = true
 
-let lastRenderedUrl = window.location.href
-let pendingVisitUrl = null
-let pendingVisitAction = null
+let lastRenderedPathname = window.location.pathname
+let pendingVisitPathname = null
+let pendingVisitIsReplace = false
 let shouldAnimateAfterRender = false
 let signaturesBefore = new Map()
 const animationClassCleanupTimers = new WeakMap()
@@ -75,12 +75,12 @@ document.addEventListener("turbo:click", (event) => {
 })
 
 document.addEventListener("turbo:visit", (event) => {
-  pendingVisitUrl = event.detail.url
-  pendingVisitAction = event.detail.action
+  pendingVisitPathname = pathnameForUrl(event.detail.url)
+  pendingVisitIsReplace = event.detail.action === "replace"
 
   const ageMs = Date.now() - pendingVisitingPermanentAtMs
   const pendingKey = visitKeyForUrl(pendingVisitingPermanentUrl)
-  const visitKey = visitKeyForUrl(pendingVisitUrl)
+  const visitKey = visitKeyForUrl(event.detail.url)
   const urlsMatch = pendingKey && visitKey && pendingKey === visitKey
   visitingPermanentEl = ageMs >= 0 && ageMs < 2000 && urlsMatch ? pendingVisitingPermanentEl : null
   pendingVisitingPermanentEl = null
@@ -89,8 +89,8 @@ document.addEventListener("turbo:visit", (event) => {
 })
 
 function clearPendingVisit() {
-  pendingVisitUrl = null
-  pendingVisitAction = null
+  pendingVisitPathname = null
+  pendingVisitIsReplace = false
 }
 
 document.addEventListener("turbo:before-cache", () => {
@@ -212,14 +212,10 @@ function pathnameForUrl(url) {
 }
 
 function isPageRefreshVisit() {
-  if (pendingVisitAction !== "replace") return false
-  if (!pendingVisitUrl) return false
+  if (!pendingVisitIsReplace) return false
+  if (!pendingVisitPathname || !lastRenderedPathname) return false
 
-  const pendingPathname = pathnameForUrl(pendingVisitUrl)
-  const lastRenderedPathname = pathnameForUrl(lastRenderedUrl)
-  if (!pendingPathname || !lastRenderedPathname) return false
-
-  return pendingPathname === lastRenderedPathname
+  return pendingVisitPathname === lastRenderedPathname
 }
 
 function parseCssTimeMs(value) {
@@ -492,7 +488,7 @@ document.addEventListener("turbo:before-render", async (event) => {
 })
 
 document.addEventListener("turbo:render", () => {
-  lastRenderedUrl = window.location.href
+  lastRenderedPathname = window.location.pathname
   submittingPermanentEl = null
   visitingPermanentEl = null
   clearPendingVisit()
