@@ -1,0 +1,38 @@
+{
+  "name": "turbo-refresh-animations",
+  "version": "0.0.1",
+  "description": "CSS class-based animations for Turbo page refresh morphs with form protection",
+  "main": "index.js",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./turbo-refresh-animations.js": "./turbo-refresh-animations.js"
+  },
+  "files": [
+    "index.js",
+    "turbo-refresh-animations.js"
+  ],
+  "keywords": [
+    "turbo",
+    "hotwire",
+    "rails",
+    "morph",
+    "animations",
+    "turbo-stream",
+    "turbo-refresh",
+    "broadcasts_refreshes_to"
+  ],
+  "author": "Raghu Betina",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/firstdraft/turbo-refresh-animations.git"
+  },
+  "bugs": {
+    "url": "https://github.com/firstdraft/turbo-refresh-animations/issues"
+  },
+  "homepage": "https://github.com/firstdraft/turbo-refresh-animations",
+  "peerDependencies": {
+    "@hotwired/turbo": ">=8.0.0"
+  }
+}

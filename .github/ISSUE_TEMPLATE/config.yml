@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security issue
+    url: https://github.com/firstdraft/turbo-refresh-animations/security/advisories/new
+    about: Please report security vulnerabilities here.
+  - name: Support or usage questions
+    url: https://github.com/firstdraft/turbo-refresh-animations/issues
+    about: Open a GitHub issue for questions or help.
