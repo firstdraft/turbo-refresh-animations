@@ -17,29 +17,29 @@ const animationClassCleanupTimers = new WeakMap()
 // morphs ("page refreshes"). Allow the initiating element
 // (form submit / link click inside it) to morph so user-intended updates apply.
 
-let submittingPermanentId = null
-let pendingVisitingPermanentId = null
+let submittingPermanentEl = null
+let pendingVisitingPermanentEl = null
 let pendingVisitingPermanentUrl = null
 let pendingVisitingPermanentAtMs = 0
-let visitingPermanentId = null
+let visitingPermanentEl = null
 
 document.addEventListener("turbo:submit-start", (event) => {
   const wrapper = event.target.closest("[data-turbo-stream-refresh-permanent]")
-  submittingPermanentId = wrapper?.id || null
+  submittingPermanentEl = wrapper || null
 })
 
 document.addEventListener("turbo:submit-end", (event) => {
   const contentType = event.detail?.fetchResponse?.contentType || ""
   if (contentType.startsWith("text/vnd.turbo-stream.html")) {
-    submittingPermanentId = null
+    submittingPermanentEl = null
   }
 })
 
 document.addEventListener("turbo:click", (event) => {
-  const wrapper = event.target.closest("[data-turbo-stream-refresh-permanent][id]")
+  const wrapper = event.target.closest("[data-turbo-stream-refresh-permanent]")
   const link = event.target.closest("a[href]")
   const clickUrl = event.detail?.url || link?.href || null
-  pendingVisitingPermanentId = wrapper?.id || null
+  pendingVisitingPermanentEl = wrapper || null
   pendingVisitingPermanentUrl = clickUrl
   pendingVisitingPermanentAtMs = Date.now()
 
@@ -65,8 +65,8 @@ document.addEventListener("turbo:visit", (event) => {
   const pendingKey = visitKeyForUrl(pendingVisitingPermanentUrl)
   const visitKey = visitKeyForUrl(pendingVisitUrl)
   const urlsMatch = pendingKey && visitKey && pendingKey === visitKey
-  visitingPermanentId = ageMs >= 0 && ageMs < 2000 && urlsMatch ? pendingVisitingPermanentId : null
-  pendingVisitingPermanentId = null
+  visitingPermanentEl = ageMs >= 0 && ageMs < 2000 && urlsMatch ? pendingVisitingPermanentEl : null
+  pendingVisitingPermanentEl = null
   pendingVisitingPermanentUrl = null
   pendingVisitingPermanentAtMs = 0
 })
@@ -384,8 +384,8 @@ document.addEventListener("turbo:before-morph-element", (event) => {
   // - During same-page refresh morphs (preserve user state like open forms)
   // - EXCEPT the element initiating the refresh (form submit or link click within it)
   if (currentEl.hasAttribute("data-turbo-stream-refresh-permanent")) {
-    const isSubmitting = currentEl.id === submittingPermanentId
-    const isVisiting = currentEl.id === visitingPermanentId
+    const isSubmitting = currentEl === submittingPermanentEl
+    const isVisiting = currentEl === visitingPermanentEl
     const isInitiator = isSubmitting || isVisiting
     const shouldProtect = !isInitiator && shouldAnimateAfterRender
 
@@ -478,8 +478,8 @@ document.addEventListener("turbo:before-render", async (event) => {
       if (newVersion === null) return
       if (oldVersion !== newVersion) {
         protectedUpdates.set(el.id, newVersion)
-        const isSubmitting = el.id === submittingPermanentId
-        const isVisiting = el.id === visitingPermanentId
+        const isSubmitting = el === submittingPermanentEl
+        const isVisiting = el === visitingPermanentEl
         if (!isSubmitting && !isVisiting) {
           el.setAttribute("data-turbo-refresh-version", newVersion)
           signaturesBefore.set(el.id, meaningfulUpdateSignature(el))
@@ -495,8 +495,8 @@ document.addEventListener("turbo:before-render", async (event) => {
 
 document.addEventListener("turbo:render", () => {
   lastRenderedUrl = window.location.href
-  submittingPermanentId = null
-  visitingPermanentId = null
+  submittingPermanentEl = null
+  visitingPermanentEl = null
   clearPendingVisit()
 
   if (shouldAnimateAfterRender) {
