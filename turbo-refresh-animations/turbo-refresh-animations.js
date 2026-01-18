@@ -50,6 +50,11 @@ document.addEventListener("turbo:visit", (event) => {
   pendingVisitingPermanentAtMs = 0
 })
 
+function clearPendingVisit() {
+  pendingVisitUrl = null
+  pendingVisitAction = null
+}
+
 document.addEventListener("turbo:before-cache", () => {
   document.querySelectorAll("[data-turbo-refresh-animate]").forEach(el => {
     const timers = animationClassCleanupTimers.get(el)
@@ -354,12 +359,16 @@ document.addEventListener("turbo:before-morph-element", (event) => {
 
 // Before render: detect deletions and animate BEFORE morph
 document.addEventListener("turbo:before-render", async (event) => {
-  if (!event.detail.newBody) return
+  if (!event.detail.newBody) {
+    clearPendingVisit()
+    return
+  }
 
   protectedUpdates = new Map()
   signaturesBefore = new Map()
 
   shouldAnimateAfterRender = isPageRefreshVisit()
+  clearPendingVisit()
   if (!shouldAnimateAfterRender) {
     return
   }
@@ -435,6 +444,7 @@ document.addEventListener("turbo:render", () => {
   lastRenderedUrl = window.location.href
   submittingPermanentId = null
   visitingPermanentId = null
+  clearPendingVisit()
 
   if (shouldAnimateAfterRender) {
     document.querySelectorAll("[data-turbo-refresh-animate][id]").forEach(el => {
