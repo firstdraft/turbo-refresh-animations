@@ -186,14 +186,23 @@ function visitKeyForUrl(url) {
   }
 }
 
+function pathnameForUrl(url) {
+  try {
+    return new URL(url, document.baseURI).pathname
+  } catch {
+    return null
+  }
+}
+
 function isPageRefreshVisit() {
+  if (pendingVisitAction !== "replace") return false
   if (!pendingVisitUrl) return false
 
-  const pendingKey = visitKeyForUrl(pendingVisitUrl)
-  const lastRenderedKey = visitKeyForUrl(lastRenderedUrl)
-  if (!pendingKey || !lastRenderedKey) return false
+  const pendingPathname = pathnameForUrl(pendingVisitUrl)
+  const lastRenderedPathname = pathnameForUrl(lastRenderedUrl)
+  if (!pendingPathname || !lastRenderedPathname) return false
 
-  return pendingKey === lastRenderedKey
+  return pendingPathname === lastRenderedPathname
 }
 
 function parseCssTimeMs(value) {
