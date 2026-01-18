@@ -38,9 +38,6 @@ document.addEventListener("turbo:click", (event) => {
   const wrapper = event.target.closest("[data-turbo-stream-refresh-permanent]")
   const link = event.target.closest("a[href]")
   const clickUrl = event.detail?.url || link?.href || null
-  pendingVisitingPermanentEl = wrapper || null
-  pendingVisitingPermanentUrl = clickUrl
-  pendingVisitingPermanentAtMs = Date.now()
 
   if (!wrapper || !link || !clickUrl) return
 
@@ -50,6 +47,27 @@ document.addEventListener("turbo:click", (event) => {
   const hasTurboMethod = link.hasAttribute("data-turbo-method")
   const hasTurboStream = link.hasAttribute("data-turbo-stream")
   const target = link.getAttribute("target")
+
+  // When a link points to the current document but includes an anchor (e.g. /path#section),
+  // don't force it into a "replace" refresh visit. That breaks expected anchor scrolling,
+  // especially with turbo-refresh-scroll=preserve. Let the browser handle it.
+  let clickHasAnchor = false
+  if (samePage) {
+    try {
+      clickHasAnchor = new URL(clickUrl, document.baseURI).hash !== ""
+    } catch {
+      clickHasAnchor = false
+    }
+  }
+
+  if (samePage && clickHasAnchor && !turboDisabled && !hasTurboAction && !hasTurboMethod && !hasTurboStream && target !== "_blank") {
+    event.preventDefault()
+    return
+  }
+
+  pendingVisitingPermanentEl = wrapper
+  pendingVisitingPermanentUrl = clickUrl
+  pendingVisitingPermanentAtMs = Date.now()
 
   if (samePage && !turboDisabled && !hasTurboAction && !hasTurboMethod && !hasTurboStream && target !== "_blank") {
     link.dataset.turboAction = "replace"
