@@ -8,7 +8,6 @@ let lastRenderedUrl = window.location.href
 let pendingVisitUrl = null
 let pendingVisitAction = null
 let shouldAnimateAfterRender = false
-let protectedUpdates = new Map()
 let signaturesBefore = new Map()
 const animationClassCleanupTimers = new WeakMap()
 
@@ -395,12 +394,18 @@ document.addEventListener("turbo:before-morph-element", (event) => {
     if (shouldProtect) {
       event.preventDefault()
 
-      // Apply update animation if content changed (detected in turbo:before-render)
-      const newVersion = protectedUpdates.get(currentEl.id)
-      if (newVersion !== undefined) {
-        currentEl.setAttribute("data-turbo-refresh-version", newVersion)
-        applyAnimation(currentEl, "turbo-refresh-change")
-        protectedUpdates.delete(currentEl.id)
+      // Flash protected elements on meaningful updates, based on data-turbo-refresh-version.
+      // This avoids false positives from view-state differences (e.g., open form vs read-only).
+      if (currentEl.hasAttribute("data-turbo-refresh-animate") && currentEl.hasAttribute("data-turbo-refresh-version")) {
+        const oldVersion = currentEl.getAttribute("data-turbo-refresh-version")
+        const newVersion = newEl.getAttribute("data-turbo-refresh-version")
+        if (newVersion !== null && oldVersion !== newVersion) {
+          currentEl.setAttribute("data-turbo-refresh-version", newVersion)
+          if (currentEl.id) {
+            signaturesBefore.set(currentEl.id, meaningfulUpdateSignature(currentEl))
+          }
+          applyAnimation(currentEl, "turbo-refresh-change")
+        }
       }
       return
     }
@@ -414,7 +419,6 @@ document.addEventListener("turbo:before-render", async (event) => {
     return
   }
 
-  protectedUpdates = new Map()
   signaturesBefore = new Map()
 
   shouldAnimateAfterRender = isPageRefreshVisit()
@@ -460,26 +464,6 @@ document.addEventListener("turbo:before-render", async (event) => {
     }
   }
 
-  // Detect updates to protected elements (they won't morph, so post-render signatures won't change)
-  // Only use data-turbo-refresh-version for this to avoid false positives from view-state differences.
-  document.querySelectorAll("[data-turbo-stream-refresh-permanent][data-turbo-refresh-animate][data-turbo-refresh-version][id]").forEach(el => {
-    const newEl = event.detail.newBody.querySelector(`#${CSS.escape(el.id)}`)
-    if (newEl) {
-      const oldVersion = el.getAttribute("data-turbo-refresh-version")
-      const newVersion = newEl.getAttribute("data-turbo-refresh-version")
-      if (newVersion === null) return
-      if (oldVersion !== newVersion) {
-        protectedUpdates.set(el.id, newVersion)
-        const isSubmitting = el === submittingPermanentEl
-        const isVisiting = el === visitingPermanentEl
-        if (!isSubmitting && !isVisiting) {
-          el.setAttribute("data-turbo-refresh-version", newVersion)
-          signaturesBefore.set(el.id, meaningfulUpdateSignature(el))
-        }
-      }
-    }
-  })
-
   if (shouldResume) {
     event.detail.resume()
   }
@@ -507,7 +491,6 @@ document.addEventListener("turbo:render", () => {
   }
 
   shouldAnimateAfterRender = false
-  protectedUpdates = new Map()
   signaturesBefore = new Map()
 })
 
