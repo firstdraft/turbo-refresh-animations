@@ -130,7 +130,7 @@ Since forms are the most common use case, the library includes special handling:
 
 1. **Submitter's form still clears**: When a user submits a form inside a protected element, that specific element is allowed to morph normally (so the form clears after submission via the redirect response). Other protected elements remain protected.
 
-2. **Same-page refreshes preserve state**: Even during refresh morphs that stay on the same URL (e.g., `redirect_to` back to the current page), elements with `data-turbo-stream-refresh-permanent` stay protected. This preserves user-created UI state like open edit forms. Links clicked inside a protected element are allowed to morph that element so user-intended actions (like "Cancel") still apply.
+2. **Same-page refreshes preserve state**: Even during refresh morphs that stay on the same URL (e.g., `redirect_to` back to the current page), elements with `data-turbo-stream-refresh-permanent` stay protected. This preserves user-created UI state like open edit forms. If a user clicks a same‑page link inside a protected element (e.g., "Cancel"), the library sets `data-turbo-action="replace"` on that link so Turbo uses a refresh morph; the initiating element updates while other protected elements remain open.
 
 ### Flash protected elements on update
 

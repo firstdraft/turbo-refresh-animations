@@ -19,6 +19,7 @@ const animationClassCleanupTimers = new WeakMap()
 
 let submittingPermanentId = null
 let pendingVisitingPermanentId = null
+let pendingVisitingPermanentUrl = null
 let pendingVisitingPermanentAtMs = 0
 let visitingPermanentId = null
 
@@ -36,8 +37,24 @@ document.addEventListener("turbo:submit-end", (event) => {
 
 document.addEventListener("turbo:click", (event) => {
   const wrapper = event.target.closest("[data-turbo-stream-refresh-permanent][id]")
+  const link = event.target.closest("a[href]")
+  const clickUrl = event.detail?.url || link?.href || null
   pendingVisitingPermanentId = wrapper?.id || null
+  pendingVisitingPermanentUrl = clickUrl
   pendingVisitingPermanentAtMs = Date.now()
+
+  if (!wrapper || !link || !clickUrl) return
+
+  const samePage = visitKeyForUrl(clickUrl) === visitKeyForUrl(window.location.href)
+  const turboDisabled = link.getAttribute("data-turbo") === "false"
+  const hasTurboAction = link.hasAttribute("data-turbo-action")
+  const hasTurboMethod = link.hasAttribute("data-turbo-method")
+  const hasTurboStream = link.hasAttribute("data-turbo-stream")
+  const target = link.getAttribute("target")
+
+  if (samePage && !turboDisabled && !hasTurboAction && !hasTurboMethod && !hasTurboStream && target !== "_blank") {
+    link.dataset.turboAction = "replace"
+  }
 })
 
 document.addEventListener("turbo:visit", (event) => {
@@ -45,8 +62,12 @@ document.addEventListener("turbo:visit", (event) => {
   pendingVisitAction = event.detail.action
 
   const ageMs = Date.now() - pendingVisitingPermanentAtMs
-  visitingPermanentId = ageMs >= 0 && ageMs < 2000 ? pendingVisitingPermanentId : null
+  const pendingKey = visitKeyForUrl(pendingVisitingPermanentUrl)
+  const visitKey = visitKeyForUrl(pendingVisitUrl)
+  const urlsMatch = pendingKey && visitKey && pendingKey === visitKey
+  visitingPermanentId = ageMs >= 0 && ageMs < 2000 && urlsMatch ? pendingVisitingPermanentId : null
   pendingVisitingPermanentId = null
+  pendingVisitingPermanentUrl = null
   pendingVisitingPermanentAtMs = 0
 })
 
@@ -156,23 +177,23 @@ function meaningfulUpdateSignature(el) {
   return `t:${normalizedTextContent(el)}`
 }
 
-function pathnameForUrl(url) {
+function visitKeyForUrl(url) {
   try {
-    return new URL(url, document.baseURI).pathname
+    const parsed = new URL(url, document.baseURI)
+    return `${parsed.origin}${parsed.pathname}${parsed.search}`
   } catch {
     return null
   }
 }
 
 function isPageRefreshVisit() {
-  if (pendingVisitAction !== "replace") return false
   if (!pendingVisitUrl) return false
 
-  const pendingPathname = pathnameForUrl(pendingVisitUrl)
-  const lastRenderedPathname = pathnameForUrl(lastRenderedUrl)
-  if (!pendingPathname || !lastRenderedPathname) return false
+  const pendingKey = visitKeyForUrl(pendingVisitUrl)
+  const lastRenderedKey = visitKeyForUrl(lastRenderedUrl)
+  if (!pendingKey || !lastRenderedKey) return false
 
-  return pendingPathname === lastRenderedPathname
+  return pendingKey === lastRenderedKey
 }
 
 function parseCssTimeMs(value) {
