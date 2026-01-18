@@ -26,13 +26,13 @@
     "turbo-refresh",
     "broadcasts_refreshes_to"
   ],
-  "author": "",
+  "author": "Raghu Betina",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/firstdraft/turbo-refresh-animations"
   },
-  "homepage": "",
+  "homepage": "https://github.com/firstdraft/turbo-refresh-animations",
   "peerDependencies": {
     "@hotwired/turbo": ">=8.0.0"
   }
