@@ -431,21 +431,16 @@ document.addEventListener("turbo:before-render", async (event) => {
     return
   }
 
-  document.querySelectorAll("[data-turbo-refresh-animate][id]").forEach(el => {
+  const animatedElements = Array.from(document.querySelectorAll("[data-turbo-refresh-animate][id]"))
+  animatedElements.forEach(el => {
     signaturesBefore.set(el.id, meaningfulUpdateSignature(el))
   })
 
   let shouldResume = false
 
   // Detect elements that will be deleted
-  const newBodyIds = new Set()
-  event.detail.newBody.querySelectorAll("[id]").forEach(el => newBodyIds.add(el.id))
-
-  const deletions = []
-  document.querySelectorAll("[data-turbo-refresh-animate][id]").forEach(el => {
-    if (!newBodyIds.has(el.id)) {
-      deletions.push(el)
-    }
+  const deletions = animatedElements.filter(el => {
+    return !event.detail.newBody.querySelector(`#${CSS.escape(el.id)}`)
   })
 
   // If there are deletions, animate them BEFORE the morph
