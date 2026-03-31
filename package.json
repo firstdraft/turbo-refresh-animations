@@ -31,8 +31,16 @@
   "bugs": {
     "url": "https://github.com/firstdraft/turbo-refresh-animations/issues"
   },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
   "homepage": "https://github.com/firstdraft/turbo-refresh-animations",
   "peerDependencies": {
     "@hotwired/turbo": ">=8.0.0"
+  },
+  "devDependencies": {
+    "jsdom": "^29.0.1",
+    "vitest": "^4.1.2"
   }
 }

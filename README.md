@@ -140,9 +140,9 @@ When `data-turbo-refresh-version` is present, it's used instead of `textContent`
 
 ### `data-turbo-refresh-stream-permanent`
 
-When using `broadcasts_refreshes_to` (or any same-page refresh morph), any element with this attribute will be protected from morphing when the refresh comes from elsewhere (e.g., another user's refresh stream). This is useful for any element whose current DOM state you want to preserve during external refreshes.
+When using `broadcasts_refreshes_to` (or any same-page refresh morph), any element with this attribute will be protected from morphing when the refresh is stream-initiated (e.g., another user's action). User-initiated navigations (form submissions, link clicks) morph everything normally.
 
-Unlike Turbo's `data-turbo-permanent`, this protection is conditional: the element is allowed to morph when it contains the form submit or same-page link that initiated the refresh, so user-initiated updates still apply.
+Unlike Turbo's `data-turbo-permanent`, this protection is conditional: it only activates during stream-initiated refreshes, not during the current user's own navigations.
 
 ```erb
 <div data-turbo-refresh-stream-permanent>
@@ -163,15 +163,34 @@ This protection does not require an `id` (unless you also want the element to pa
 </div>
 ```
 
-### Form-specific conveniences
+### How protection works
 
-Since forms are the most common use case, the library includes special handling:
+The library detects stream-initiated refreshes via the `turbo:before-stream-render` event. When a `<turbo-stream action=”refresh”>` arrives that was not triggered by the current user's action, all elements with `data-turbo-refresh-stream-permanent` are protected from morphing.
 
-1. **Submitter's form still clears**: When a user submits a form inside a protected element, that specific element is allowed to morph normally (so the form clears after submission via the redirect response). Other protected elements remain protected.
+User-initiated actions (form submissions, link clicks) are never protected. This relies on Turbo's request-id deduping: when you submit a form, the resulting broadcast refresh is ignored by your client (matching request-id), so only the user-initiated morph runs — with no protection needed.
 
-2. **Same-page refreshes preserve state**: Even during refresh morphs that stay on the same URL (e.g., `redirect_to` back to the current page), elements with `data-turbo-refresh-stream-permanent` stay protected. This preserves user-created UI state like open edit forms. If a user clicks a same‑page link inside a protected element (e.g., "Cancel"), the library sets `data-turbo-action="replace"` on that link so Turbo uses a refresh morph; the initiating element updates while other protected elements remain open.
+**Same-page links inside protected elements**: If a user clicks a same-page link inside a protected element (e.g., “Cancel” on an inline edit form), the library sets `data-turbo-action=”replace”` on that link so Turbo uses a refresh morph. Since this is a user-initiated action, all elements morph normally.
    - For this behavior, “same page” means the same `origin + pathname + search` (hash ignored).
-   - Note: links to an anchor in the current document (e.g. `/lists/1#comments`) are treated as in-page navigation and are not forced into a refresh morph.
+   - Links to an anchor in the current document (e.g. `/lists/1#comments`) are treated as in-page navigation and are not forced into a refresh morph.
+
+### Important: Avoid Turbo Stream templates on redirect targets
+
+For protection to work, form submissions must result in a **full HTML page response** (triggering a page refresh morph), not a Turbo Stream response. If the redirect target has a `.turbo_stream.erb` template (e.g., `show.turbo_stream.erb`), Rails will render it instead of the HTML page — which means no morph happens and the form won't clear.
+
+For example, if your `create` action redirects to `show`:
+
+```ruby
+def create
+  @item = @list.items.build(item_params)
+  if @item.save
+    redirect_to @list, status: :see_other  # GET /lists/1
+  end
+end
+```
+
+And you have a `show.turbo_stream.erb` for an inline edit flow, the redirect's GET request will render the Turbo Stream template (because `fetch()` preserves the `Accept: text/vnd.turbo-stream.html` header across redirects). The form will never clear.
+
+**Fix**: Use `respond_to` to limit when the Turbo Stream format is rendered, or use a separate action for inline edit flows instead of a `show.turbo_stream.erb` template.
 
 ### Flash protected elements on update
 

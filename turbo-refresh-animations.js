@@ -13,28 +13,17 @@ let shouldAnimateAfterRender = false
 let signaturesBefore = new Map()
 const animationClassCleanupTimers = new WeakMap()
 
-// ========== FORM PROTECTION ==========
-// Protect elements with data-turbo-refresh-stream-permanent during same-page refresh
-// morphs ("page refreshes"). Allow the initiating element
-// (form submit / link click inside it) to morph so user-intended updates apply.
+// ========== STREAM PROTECTION ==========
+// Protect elements with data-turbo-refresh-stream-permanent during stream-initiated
+// refresh morphs. User-initiated navigations (clicks, form submissions) morph normally.
+// This relies on Turbo's request-id deduping: when you submit a form, the resulting
+// broadcast refresh is ignored by your client (matching request-id), so only the
+// user-initiated morph runs — with no protection needed.
 
-let submittingPermanentEl = null
-let pendingVisitingPermanentEl = null
-let pendingVisitingPermanentUrl = null
-let pendingVisitingPermanentAtMs = 0
-let pendingVisitingPermanentClearTimer = null
-let visitingPermanentEl = null
-
-function clearPendingVisitingPermanent() {
-  pendingVisitingPermanentEl = null
-  pendingVisitingPermanentUrl = null
-  pendingVisitingPermanentAtMs = 0
-
-  if (pendingVisitingPermanentClearTimer) {
-    window.clearTimeout(pendingVisitingPermanentClearTimer)
-    pendingVisitingPermanentClearTimer = null
-  }
-}
+let streamRefreshPending = false
+let streamRefreshPendingTimer = null
+let morphIsFromStream = false
+let userNavigationInProgress = false
 
 function hideTurboProgressBar() {
   const progressBar = window.Turbo?.navigator?.delegate?.adapter?.progressBar
@@ -43,21 +32,51 @@ function hideTurboProgressBar() {
 
 document.addEventListener("turbo:morph", hideTurboProgressBar)
 
-document.addEventListener("turbo:submit-start", (event) => {
-  const wrapper = event.target.closest("[data-turbo-refresh-stream-permanent]")
-  submittingPermanentEl = wrapper || null
+// When a refresh stream action arrives, flag that the next morph is stream-initiated.
+// turbo:before-stream-render fires BEFORE Turbo's request-id deduping, so our own
+// broadcasts (which will be deduped) still trigger this event. We gate on
+// userNavigationInProgress to ignore streams that arrive during our own actions.
+document.addEventListener("turbo:before-stream-render", (event) => {
+  if (event.target.getAttribute("action") === "refresh" && !userNavigationInProgress) {
+    streamRefreshPending = true
+    if (streamRefreshPendingTimer) clearTimeout(streamRefreshPendingTimer)
+    // Clear after a generous window in case the refresh was deduped or cancelled.
+    streamRefreshPendingTimer = setTimeout(() => {
+      streamRefreshPending = false
+      streamRefreshPendingTimer = null
+    }, 1000)
+  }
 })
 
+// User-initiated actions clear the stream flag and mark that a user navigation is in
+// progress. The flag stays true through the full render cycle so that our own broadcast
+// (which arrives via turbo:before-stream-render before Turbo dedupes it) is ignored.
+document.addEventListener("turbo:submit-start", () => {
+  streamRefreshPending = false
+  userNavigationInProgress = true
+})
+
+// If the form response was a Turbo Stream (not a redirect), no turbo:render will
+// fire, so clear the flag here to prevent it from getting stuck.
 document.addEventListener("turbo:submit-end", (event) => {
   const contentType = event.detail?.fetchResponse?.contentType || ""
   if (contentType.startsWith("text/vnd.turbo-stream.html")) {
-    submittingPermanentEl = null
+    userNavigationInProgress = false
   }
 })
 
 document.addEventListener("turbo:click", (event) => {
+  streamRefreshPending = false
+
   const wrapper = event.target.closest("[data-turbo-refresh-stream-permanent]")
   const link = event.target.closest("a[href]")
+
+  // Only set userNavigationInProgress for page navigations, not Turbo Stream
+  // requests. Turbo Stream responses don't trigger turbo:render, so the flag
+  // would get stuck forever.
+  if (!link?.hasAttribute("data-turbo-stream")) {
+    userNavigationInProgress = true
+  }
   const clickUrl = event.detail?.url || link?.href || null
 
   if (!wrapper || !link || !clickUrl) return
@@ -86,15 +105,6 @@ document.addEventListener("turbo:click", (event) => {
     return
   }
 
-  pendingVisitingPermanentEl = wrapper
-  pendingVisitingPermanentUrl = clickUrl
-  pendingVisitingPermanentAtMs = Date.now()
-
-  if (pendingVisitingPermanentClearTimer) {
-    window.clearTimeout(pendingVisitingPermanentClearTimer)
-  }
-  pendingVisitingPermanentClearTimer = window.setTimeout(clearPendingVisitingPermanent, 2000)
-
   if (samePage && !turboDisabled && !hasTurboAction && !hasTurboMethod && !hasTurboStream && target !== "_blank") {
     link.dataset.turboAction = "replace"
   }
@@ -103,13 +113,6 @@ document.addEventListener("turbo:click", (event) => {
 document.addEventListener("turbo:visit", (event) => {
   pendingVisitPathname = pathnameForUrl(event.detail.url)
   pendingVisitIsReplace = event.detail.action === "replace"
-
-  const ageMs = Date.now() - pendingVisitingPermanentAtMs
-  const pendingKey = visitKeyForUrl(pendingVisitingPermanentUrl)
-  const visitKey = visitKeyForUrl(event.detail.url)
-  const urlsMatch = pendingKey && visitKey && pendingKey === visitKey
-  visitingPermanentEl = ageMs >= 0 && ageMs < 2000 && urlsMatch ? pendingVisitingPermanentEl : null
-  clearPendingVisitingPermanent()
 })
 
 function clearPendingVisit() {
@@ -416,24 +419,16 @@ function animateAndRemove(el, animClass) {
   })
 }
 
-// Handle morphing: protect permanent elements, animate deletes
+// Handle morphing: protect permanent elements during stream refreshes
 document.addEventListener("turbo:before-morph-element", (event) => {
   const currentEl = event.target
   const newEl = event.detail.newElement
 
-  // Protect permanent elements:
-  // - During same-page refresh morphs (preserve user state like open forms)
-  // - EXCEPT the element initiating the refresh (form submit or link click within it)
   if (currentEl.hasAttribute("data-turbo-refresh-stream-permanent")) {
     // If the element is being removed, allow Turbo to remove it normally.
     if (newEl === undefined) return
 
-    const isSubmitting = currentEl === submittingPermanentEl
-    const isVisiting = currentEl === visitingPermanentEl
-    const isInitiator = isSubmitting || isVisiting
-    const shouldProtect = !isInitiator && shouldAnimateAfterRender
-
-    if (shouldProtect) {
+    if (morphIsFromStream) {
       event.preventDefault()
 
       // Flash protected elements on meaningful updates, based on data-turbo-refresh-version.
@@ -464,6 +459,12 @@ document.addEventListener("turbo:before-render", async (event) => {
   signaturesBefore = new Map()
 
   shouldAnimateAfterRender = isPageRefreshVisit()
+  morphIsFromStream = streamRefreshPending && shouldAnimateAfterRender
+  streamRefreshPending = false
+  if (streamRefreshPendingTimer) {
+    clearTimeout(streamRefreshPendingTimer)
+    streamRefreshPendingTimer = null
+  }
   clearPendingVisit()
   if (!shouldAnimateAfterRender) {
     return
@@ -513,8 +514,8 @@ document.addEventListener("turbo:before-render", async (event) => {
 
 document.addEventListener("turbo:render", () => {
   lastRenderedPathname = window.location.pathname
-  submittingPermanentEl = null
-  visitingPermanentEl = null
+  morphIsFromStream = false
+  userNavigationInProgress = false
   clearPendingVisit()
 
   if (shouldAnimateAfterRender) {
