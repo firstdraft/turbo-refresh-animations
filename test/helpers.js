@@ -81,25 +81,6 @@ export function dispatchTurboBeforeCache() {
   document.dispatchEvent(new CustomEvent("turbo:before-cache"))
 }
 
-export function dispatchTurboBeforeStreamRender(action = "refresh") {
-  const fakeStreamEl = document.createElement("turbo-stream")
-  fakeStreamEl.setAttribute("action", action)
-  const event = new CustomEvent("turbo:before-stream-render", {
-    bubbles: true,
-  })
-  Object.defineProperty(event, "target", { value: fakeStreamEl })
-  document.dispatchEvent(event)
-  return event
-}
-
-// Simulate a same-page refresh morph triggered by a replace visit.
-// This is the common flow: turbo:visit (replace, same URL) → turbo:before-render → morph → turbo:render
-export function simulateSamePageRefreshMorph(newBody) {
-  const url = window.location.href
-  dispatchTurboVisit(url, "replace")
-  dispatchTurboBeforeRender(newBody)
-}
-
 // Build a minimal newBody for turbo:before-render
 export function buildNewBody(innerHTML) {
   const body = document.createElement("body")
