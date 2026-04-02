@@ -13,10 +13,10 @@ let shouldAnimateAfterRender = false
 let signaturesBefore = new Map()
 const animationClassCleanupTimers = new WeakMap()
 
-// ========== FORM PROTECTION ==========
-// Protect elements with data-turbo-refresh-stream-permanent during same-page refresh
-// morphs ("page refreshes"). Allow the initiating element
-// (form submit / link click inside it) to morph so user-intended updates apply.
+// ========== ELEMENT PRESERVATION ==========
+// Preserve elements with data-turbo-refresh-preserve during same-page refresh morphs
+// ("page refreshes"). The initiating element (form submit / link click inside it) is
+// allowed to morph so user-intended updates apply.
 
 let submittingPermanentEl = null
 let pendingVisitingPermanentEl = null
@@ -44,7 +44,7 @@ function hideTurboProgressBar() {
 document.addEventListener("turbo:morph", hideTurboProgressBar)
 
 document.addEventListener("turbo:submit-start", (event) => {
-  const wrapper = event.target.closest("[data-turbo-refresh-stream-permanent]")
+  const wrapper = event.target.closest("[data-turbo-refresh-preserve]")
   submittingPermanentEl = wrapper || null
 })
 
@@ -56,7 +56,7 @@ document.addEventListener("turbo:submit-end", (event) => {
 })
 
 document.addEventListener("turbo:click", (event) => {
-  const wrapper = event.target.closest("[data-turbo-refresh-stream-permanent]")
+  const wrapper = event.target.closest("[data-turbo-refresh-preserve]")
   const link = event.target.closest("a[href]")
   const clickUrl = event.detail?.url || link?.href || null
 
@@ -424,7 +424,7 @@ document.addEventListener("turbo:before-morph-element", (event) => {
   // Protect permanent elements:
   // - During same-page refresh morphs (preserve user state like open forms)
   // - EXCEPT the element initiating the refresh (form submit or link click within it)
-  if (currentEl.hasAttribute("data-turbo-refresh-stream-permanent")) {
+  if (currentEl.hasAttribute("data-turbo-refresh-preserve")) {
     // If the element is being removed, allow Turbo to remove it normally.
     if (newEl === undefined) return
 
