@@ -25,7 +25,7 @@ function samePageRefreshSetup(newBody) {
   dispatchTurboBeforeRender(newBody)
 }
 
-describe("data-turbo-refresh-stream-permanent protection", () => {
+describe("data-turbo-refresh-preserve protection", () => {
   let container
 
   beforeEach(() => {
@@ -45,7 +45,7 @@ describe("data-turbo-refresh-stream-permanent protection", () => {
     it("prevents morphing of permanent elements", () => {
       const el = document.createElement("div")
       el.id = "form-wrapper"
-      el.setAttribute("data-turbo-refresh-stream-permanent", "")
+      el.setAttribute("data-turbo-refresh-preserve", "")
       container.appendChild(el)
 
       const newEl = document.createElement("div")
@@ -76,7 +76,7 @@ describe("data-turbo-refresh-stream-permanent protection", () => {
     it("allows removal of permanent elements (newElement is undefined)", () => {
       const el = document.createElement("div")
       el.id = "form-wrapper"
-      el.setAttribute("data-turbo-refresh-stream-permanent", "")
+      el.setAttribute("data-turbo-refresh-preserve", "")
       container.appendChild(el)
 
       const newBody = buildNewBody("")
@@ -89,12 +89,12 @@ describe("data-turbo-refresh-stream-permanent protection", () => {
     it("protects multiple permanent elements simultaneously", () => {
       const el1 = document.createElement("div")
       el1.id = "form-1"
-      el1.setAttribute("data-turbo-refresh-stream-permanent", "")
+      el1.setAttribute("data-turbo-refresh-preserve", "")
       container.appendChild(el1)
 
       const el2 = document.createElement("div")
       el2.id = "form-2"
-      el2.setAttribute("data-turbo-refresh-stream-permanent", "")
+      el2.setAttribute("data-turbo-refresh-preserve", "")
       container.appendChild(el2)
 
       const newBody = buildNewBody(
@@ -114,7 +114,7 @@ describe("data-turbo-refresh-stream-permanent protection", () => {
     it("allows morphing of the submitter's permanent element", () => {
       const el = document.createElement("div")
       el.id = "form-wrapper"
-      el.setAttribute("data-turbo-refresh-stream-permanent", "")
+      el.setAttribute("data-turbo-refresh-preserve", "")
       container.appendChild(el)
 
       const form = document.createElement("form")
@@ -134,12 +134,12 @@ describe("data-turbo-refresh-stream-permanent protection", () => {
     it("still protects OTHER permanent elements when one submits", () => {
       const el1 = document.createElement("div")
       el1.id = "form-1"
-      el1.setAttribute("data-turbo-refresh-stream-permanent", "")
+      el1.setAttribute("data-turbo-refresh-preserve", "")
       container.appendChild(el1)
 
       const el2 = document.createElement("div")
       el2.id = "form-2"
-      el2.setAttribute("data-turbo-refresh-stream-permanent", "")
+      el2.setAttribute("data-turbo-refresh-preserve", "")
       container.appendChild(el2)
 
       const form = document.createElement("form")
@@ -168,7 +168,7 @@ describe("data-turbo-refresh-stream-permanent protection", () => {
     it("clears submitter tracking when response is a Turbo Stream", () => {
       const el = document.createElement("div")
       el.id = "form-wrapper"
-      el.setAttribute("data-turbo-refresh-stream-permanent", "")
+      el.setAttribute("data-turbo-refresh-preserve", "")
       container.appendChild(el)
 
       const form = document.createElement("form")
@@ -191,7 +191,7 @@ describe("data-turbo-refresh-stream-permanent protection", () => {
     it("allows morphing of the permanent element containing the clicked link", () => {
       const el = document.createElement("div")
       el.id = "item-wrapper"
-      el.setAttribute("data-turbo-refresh-stream-permanent", "")
+      el.setAttribute("data-turbo-refresh-preserve", "")
       container.appendChild(el)
 
       const link = document.createElement("a")
@@ -214,7 +214,7 @@ describe("data-turbo-refresh-stream-permanent protection", () => {
     it("does not protect permanent elements (not a same-page morph)", () => {
       const el = document.createElement("div")
       el.id = "form-wrapper"
-      el.setAttribute("data-turbo-refresh-stream-permanent", "")
+      el.setAttribute("data-turbo-refresh-preserve", "")
       container.appendChild(el)
 
       const newEl = document.createElement("div")
@@ -233,7 +233,7 @@ describe("data-turbo-refresh-stream-permanent protection", () => {
     it("updates version attribute when version changes on a protected element", () => {
       const el = document.createElement("div")
       el.id = "item-1"
-      el.setAttribute("data-turbo-refresh-stream-permanent", "")
+      el.setAttribute("data-turbo-refresh-preserve", "")
       el.setAttribute("data-turbo-refresh-animate", "")
       el.setAttribute("data-turbo-refresh-version", "v1")
       container.appendChild(el)
@@ -255,7 +255,7 @@ describe("data-turbo-refresh-stream-permanent protection", () => {
     it("does not flash when version is unchanged", () => {
       const el = document.createElement("div")
       el.id = "item-1"
-      el.setAttribute("data-turbo-refresh-stream-permanent", "")
+      el.setAttribute("data-turbo-refresh-preserve", "")
       el.setAttribute("data-turbo-refresh-animate", "")
       el.setAttribute("data-turbo-refresh-version", "v1")
       container.appendChild(el)

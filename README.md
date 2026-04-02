@@ -6,7 +6,7 @@ Animates elements that enter, exit, or change during [Turbo Page Refreshes](http
 
 - Opt-in animations via `data-turbo-refresh-animate` attribute.
 - Animates entries, exits, and changes.
-- Protect elements (especially forms) during same-page refresh morphs; the initiator still morphs.
+- Preserve elements (especially forms) during external refresh morphs; your own actions still morph through.
 - Customize animations via CSS classes.
 - Works with importmaps, esbuild, webpack, or any bundler.
 
@@ -23,12 +23,12 @@ Animates elements that enter, exit, or change during [Turbo Page Refreshes](http
 - [Data Attributes Reference](#data-attributes-reference)
 - [How It Works](#how-it-works)
   - [Change Detection](#change-detection)
-- [Protecting Elements During Same-Page Refreshes](#protecting-elements-during-same-page-refreshes)
-  - [`data-turbo-refresh-stream-permanent`](#data-turbo-refresh-stream-permanent)
+- [Preserving Elements During External Refreshes](#preserving-elements-during-external-refreshes)
+  - [`data-turbo-refresh-preserve`](#data-turbo-refresh-preserve)
   - [Form-specific conveniences](#form-specific-conveniences)
   - [Turbo Stream templates and form redirects](#turbo-stream-templates-and-form-redirects)
   - [Duplicate IDs cause scroll jumps during morphs](#duplicate-ids-cause-scroll-jumps-during-morphs)
-  - [Flash protected elements on update](#flash-protected-elements-on-update)
+  - [Flash preserved elements on update](#flash-preserved-elements-on-update)
 - [Customization](#customization)
   - [Custom animation classes per element](#custom-animation-classes-per-element)
   - [Enable specific animations](#enable-specific-animations)
@@ -102,7 +102,7 @@ Elements will animate when created, changed, or deleted during Turbo morphs.
 | `data-turbo-refresh-enter="class"` | Custom enter animation class (single class token; no spaces) |
 | `data-turbo-refresh-change="class"` | Custom change animation class (single class token; no spaces) |
 | `data-turbo-refresh-exit="class"` | Custom exit animation class (single class token; no spaces) |
-| `data-turbo-refresh-stream-permanent` | Protect element during same-page refresh morphs (except initiator) |
+| `data-turbo-refresh-preserve` | Preserve element during external refresh morphs (your own actions still morph through) |
 | `data-turbo-refresh-version` | Override change detection (used instead of `textContent`, e.g. `item.cache_key_with_version`) |
 
 ## How It Works
@@ -138,26 +138,26 @@ When `data-turbo-refresh-version` is present, it's used instead of `textContent`
 - Elements include dynamic attributes from JavaScript frameworks.
 - You want explicit control over what constitutes a "change".
 
-## Protecting Elements During Same-Page Refreshes
+## Preserving Elements During External Refreshes
 
-### `data-turbo-refresh-stream-permanent`
+### `data-turbo-refresh-preserve`
 
-When using `broadcasts_refreshes_to` (or any same-page refresh morph), any element with this attribute will be protected from morphing when the refresh comes from elsewhere (e.g., another user's refresh stream). This is useful for any element whose current DOM state you want to preserve during external refreshes.
-
-Unlike Turbo's `data-turbo-permanent`, this protection is conditional: the element is allowed to morph when it contains the form submit or same-page link that initiated the refresh, so user-initiated updates still apply.
+When multiple users collaborate on the same page via `broadcasts_refreshes_to`, another user's action can trigger a refresh morph that disrupts the current user's DOM state (e.g., clears a form they're typing in, closes an inline edit form they have open). Add `data-turbo-refresh-preserve` to tell the library to preserve that element's state during external refreshes:
 
 ```erb
-<div data-turbo-refresh-stream-permanent>
-  <!-- This element won't be morphed during refresh streams -->
+<div data-turbo-refresh-preserve>
+  <!-- Preserved during other users' refreshes; your own actions morph through -->
 </div>
 ```
 
-This protection does not require an `id` (unless you also want the element to participate in enter/change/exit animations).
+Unlike Turbo's `data-turbo-permanent`, this is conditional: the element morphs normally when it contains the form submit or link click that initiated the refresh. Only external refreshes are blocked.
 
-**The most common use case is forms.** Without protection, a user typing in a form would lose their input whenever another user's action triggers a refresh stream:
+This does not require an `id` (unless you also want the element to participate in enter/change/exit animations).
+
+**The most common use case is forms.** Without preservation, a user typing in a form would lose their input whenever another user's action triggers a refresh:
 
 ```erb
-<div id="new_item_form" data-turbo-refresh-stream-permanent>
+<div id="new_item_form" data-turbo-refresh-preserve>
   <%= form_with model: item do |f| %>
     <%= f.text_field :title %>
     <%= f.submit "Add" %>
@@ -171,7 +171,7 @@ Since forms are the most common use case, the library includes special handling:
 
 1. **Submitter's form still clears**: When a user submits a form inside a protected element, that specific element is allowed to morph normally (so the form clears after submission via the redirect response). Other protected elements remain protected.
 
-2. **Same-page refreshes preserve state**: Even during refresh morphs that stay on the same URL (e.g., `redirect_to` back to the current page), elements with `data-turbo-refresh-stream-permanent` stay protected. This preserves user-created UI state like open edit forms. If a user clicks a same‑page link inside a protected element (e.g., "Cancel"), the library sets `data-turbo-action="replace"` on that link so Turbo uses a refresh morph; the initiating element updates while other protected elements remain open.
+2. **Same-page refreshes preserve state**: Even during refresh morphs that stay on the same URL (e.g., `redirect_to` back to the current page), elements with `data-turbo-refresh-preserve` stay preserved. This keeps user-created UI state like open edit forms. If a user clicks a same‑page link inside a preserved element (e.g., "Cancel"), the library sets `data-turbo-action="replace"` on that link so Turbo uses a refresh morph; the initiating element updates while other preserved elements remain open.
    - For this behavior, “same page” means the same `origin + pathname + search` (hash ignored).
    - Note: links to an anchor in the current document (e.g. `/lists/1#comments`) are treated as in-page navigation and are not forced into a refresh morph.
 
@@ -188,7 +188,7 @@ When a form submits, Turbo adds `text/vnd.turbo-stream.html` to the request's `A
 
 This is a [browser-level limitation](https://github.com/rails/rails/issues/45566), not a bug in Turbo or Rails. The Fetch API follows redirects internally, and there's no JavaScript hook to modify headers on the redirected request.
 
-**Fix**: Don't put `.turbo_stream.erb` templates on actions that are also redirect targets. For example, if your `create` action does `redirect_to @list`, don't have a `lists/show.turbo_stream.erb`. Instead, use a separate action for inline Turbo Stream flows (e.g., a dedicated `cancel` action), or use the library's same-page link handling for Cancel links inside `data-turbo-refresh-stream-permanent` elements (the library automatically sets `data-turbo-action="replace"` on same-page links inside protected elements, which triggers a page refresh morph).
+**Fix**: Don't put `.turbo_stream.erb` templates on actions that are also redirect targets. For example, if your `create` action does `redirect_to @list`, don't have a `lists/show.turbo_stream.erb`. Instead, use a separate action for inline Turbo Stream flows (e.g., a dedicated `cancel` action), or use the library's same-page link handling for Cancel links inside `data-turbo-refresh-preserve` elements (the library automatically sets `data-turbo-action="replace"` on same-page links inside protected elements, which triggers a page refresh morph).
 
 ### Duplicate IDs cause scroll jumps during morphs
 
@@ -212,13 +212,13 @@ Rails' `check_box` helper auto-generates an `id` from the attribute name (`item_
     id: dom_id(item, :completed) %>
 ```
 
-### Flash protected elements on update
+### Flash preserved elements on update
 
-To show a visual indicator when a protected element's underlying data changes (e.g., another user edits the same item), add `data-turbo-refresh-version`:
+To show a visual indicator when a preserved element's underlying data changes (e.g., another user edits the same item), add `data-turbo-refresh-version`:
 
 ```erb
 <div id="<%= dom_id(item) %>"
-     data-turbo-refresh-stream-permanent
+     data-turbo-refresh-preserve
      data-turbo-refresh-animate
      data-turbo-refresh-version="<%= item.cache_key_with_version %>">
   <%= form_with model: [item.list, item] do |f| %>
@@ -228,9 +228,9 @@ To show a visual indicator when a protected element's underlying data changes (e
 </div>
 ```
 
-When the version changes during an external refresh, the element flashes with the change animation while keeping its current content protected.
+When the version changes during an external refresh, the element flashes with the change animation while keeping its current content preserved.
 
-Note: protected elements can temporarily be in a different "view state" than the server-rendered HTML (e.g., an open edit form vs a read-only item view). To avoid false positives, the library only flashes protected elements based on `data-turbo-refresh-version` from the incoming HTML. In practice, add `data-turbo-refresh-version` to all render variants of a given `id` if you want flashing to work reliably.
+Note: preserved elements can temporarily be in a different "view state" than the server-rendered HTML (e.g., an open edit form vs a read-only item view). To avoid false positives, the library only flashes preserved elements based on `data-turbo-refresh-version` from the incoming HTML. In practice, add `data-turbo-refresh-version` to all render variants of a given `id` if you want flashing to work reliably.
 
 ## Customization
 
