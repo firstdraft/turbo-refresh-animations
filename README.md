@@ -26,6 +26,7 @@ Animates elements that enter, exit, or change during [Turbo Page Refreshes](http
 - [Protecting Elements During Same-Page Refreshes](#protecting-elements-during-same-page-refreshes)
   - [`data-turbo-refresh-stream-permanent`](#data-turbo-refresh-stream-permanent)
   - [Form-specific conveniences](#form-specific-conveniences)
+  - [Turbo Stream templates and form redirects](#turbo-stream-templates-and-form-redirects)
   - [Flash protected elements on update](#flash-protected-elements-on-update)
 - [Customization](#customization)
   - [Custom animation classes per element](#custom-animation-classes-per-element)
@@ -172,6 +173,21 @@ Since forms are the most common use case, the library includes special handling:
 2. **Same-page refreshes preserve state**: Even during refresh morphs that stay on the same URL (e.g., `redirect_to` back to the current page), elements with `data-turbo-refresh-stream-permanent` stay protected. This preserves user-created UI state like open edit forms. If a user clicks a same‑page link inside a protected element (e.g., "Cancel"), the library sets `data-turbo-action="replace"` on that link so Turbo uses a refresh morph; the initiating element updates while other protected elements remain open.
    - For this behavior, “same page” means the same `origin + pathname + search` (hash ignored).
    - Note: links to an anchor in the current document (e.g. `/lists/1#comments`) are treated as in-page navigation and are not forced into a refresh morph.
+
+### Turbo Stream templates and form redirects
+
+This library relies on full-page morphs to detect changes and animate elements. A common Rails gotcha can prevent morphs from happening on the initiating client:
+
+When a form submits, Turbo adds `text/vnd.turbo-stream.html` to the request's `Accept` header. If the form submission redirects (e.g., `redirect_to @list, status: :see_other`), the browser's Fetch API [preserves the `Accept` header across the redirect](https://github.com/hotwired/turbo/issues/1018). If the redirect target has a `.turbo_stream.erb` template, Rails will render it instead of the HTML page. This means:
+
+- No page morph happens (the response is a Turbo Stream, not HTML)
+- The library can't detect enter/change/exit — no animations run
+- The initiator's form doesn't clear (the morph that would clear it never happens)
+- The broadcast refresh is deduped by request-id, so no morph follows
+
+This is a [browser-level limitation](https://github.com/rails/rails/issues/45566), not a bug in Turbo or Rails. The Fetch API follows redirects internally, and there's no JavaScript hook to modify headers on the redirected request.
+
+**Fix**: Don't put `.turbo_stream.erb` templates on actions that are also redirect targets. For example, if your `create` action does `redirect_to @list`, don't have a `lists/show.turbo_stream.erb`. Instead, use a separate action for inline Turbo Stream flows (e.g., a dedicated `cancel` action), or use the library's same-page link handling for Cancel links inside `data-turbo-refresh-stream-permanent` elements (the library automatically sets `data-turbo-action="replace"` on same-page links inside protected elements, which triggers a page refresh morph).
 
 ### Flash protected elements on update
 
