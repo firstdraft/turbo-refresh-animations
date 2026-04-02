@@ -27,6 +27,7 @@ Animates elements that enter, exit, or change during [Turbo Page Refreshes](http
   - [`data-turbo-refresh-stream-permanent`](#data-turbo-refresh-stream-permanent)
   - [Form-specific conveniences](#form-specific-conveniences)
   - [Turbo Stream templates and form redirects](#turbo-stream-templates-and-form-redirects)
+  - [Duplicate IDs cause scroll jumps during morphs](#duplicate-ids-cause-scroll-jumps-during-morphs)
   - [Flash protected elements on update](#flash-protected-elements-on-update)
 - [Customization](#customization)
   - [Custom animation classes per element](#custom-animation-classes-per-element)
@@ -188,6 +189,28 @@ When a form submits, Turbo adds `text/vnd.turbo-stream.html` to the request's `A
 This is a [browser-level limitation](https://github.com/rails/rails/issues/45566), not a bug in Turbo or Rails. The Fetch API follows redirects internally, and there's no JavaScript hook to modify headers on the redirected request.
 
 **Fix**: Don't put `.turbo_stream.erb` templates on actions that are also redirect targets. For example, if your `create` action does `redirect_to @list`, don't have a `lists/show.turbo_stream.erb`. Instead, use a separate action for inline Turbo Stream flows (e.g., a dedicated `cancel` action), or use the library's same-page link handling for Cancel links inside `data-turbo-refresh-stream-permanent` elements (the library automatically sets `data-turbo-action="replace"` on same-page links inside protected elements, which triggers a page refresh morph).
+
+### Duplicate IDs cause scroll jumps during morphs
+
+Turbo's morph engine (idiomorph) [loses scroll position when duplicate IDs exist on the page](https://github.com/hotwired/turbo/issues/1226), especially when the duplicated element is the one triggering the event. This is easy to create accidentally in Rails when rendering forms inside a loop:
+
+```erb
+<%# BAD: every item gets id="item_completed" %>
+<% @items.each do |item| %>
+  <%= form_with model: item do |f| %>
+    <%= f.check_box :completed, onchange: "this.form.requestSubmit()" %>
+  <% end %>
+<% end %>
+```
+
+Rails' `check_box` helper auto-generates an `id` from the attribute name (`item_completed`), which is the same for every item. When any checkbox triggers a morph, the page jumps to the top.
+
+**Fix**: Give each input a unique ID:
+
+```erb
+<%= f.check_box :completed, onchange: "this.form.requestSubmit()",
+    id: dom_id(item, :completed) %>
+```
 
 ### Flash protected elements on update
 
