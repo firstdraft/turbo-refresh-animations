@@ -69,7 +69,9 @@ import "turbo-refresh-animations"
 
 ### 2. Add the CSS
 
-Add CSS for the animation classes in your app's stylesheet. This package does not ship CSS. You can copy the example styles from the [Example animations](#example-animations) section or write your own.
+Add CSS for the animation classes in your app's stylesheet. This package does not ship visual CSS — you define your own animations. Copy the example styles from the [Example animations](#example-animations) section or write your own.
+
+The library does inject one functional CSS rule (`overflow-anchor: none` on animated elements) to prevent the browser's [scroll anchoring](https://developer.mozilla.org/en-US/docs/Web/CSS/overflow-anchor) from following elements that move upward in the DOM during morphs. You can override this in your own stylesheet if needed.
 
 ### 3. Enable morphing in your layout
 

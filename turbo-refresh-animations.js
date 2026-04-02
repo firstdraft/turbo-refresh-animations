@@ -6,6 +6,13 @@ const canInstall = typeof window !== "undefined" && typeof document !== "undefin
 if (canInstall && !window.TurboRefreshAnimationsInstalled) {
   window.TurboRefreshAnimationsInstalled = true
 
+// Prevent browser scroll anchoring from following reordered elements. Without
+// this, morphs that move an element upward in the DOM cause the viewport to
+// scroll with it. Users can override this in their own stylesheet if needed.
+const style = document.createElement("style")
+style.textContent = "[data-turbo-refresh-animate] { overflow-anchor: none; }"
+document.head.appendChild(style)
+
 let lastRenderedPathname = window.location.pathname
 let pendingVisitPathname = null
 let pendingVisitIsReplace = false
