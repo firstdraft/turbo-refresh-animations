@@ -606,8 +606,8 @@ document.addEventListener("turbo:render", () => {
           el.removeEventListener("transitioncancel", onCancel)
           if (timer) clearTimeout(timer)
         }
-        const onEnd = (event) => { if (event.propertyName === "transform") cleanup() }
-        const onCancel = (event) => { if (event.propertyName === "transform") cleanup() }
+        const onEnd = (event) => { if (event.target === el && event.propertyName === "transform") cleanup() }
+        const onCancel = (event) => { if (event.target === el && event.propertyName === "transform") cleanup() }
         const timer = setTimeout(cleanup, durationMs + 50)
 
         el.addEventListener("transitionend", onEnd)
