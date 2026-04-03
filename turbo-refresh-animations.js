@@ -18,6 +18,7 @@ let pendingVisitPathname = null
 let pendingVisitIsReplace = false
 let shouldAnimateAfterRender = false
 let signaturesBefore = new Map()
+let rectsBefore = new Map()
 const animationClassCleanupTimers = new WeakMap()
 
 // ========== ELEMENT PRESERVATION ==========
@@ -146,6 +147,10 @@ document.addEventListener("turbo:before-cache", () => {
     for (const className of animationClasses) {
       if (className) el.classList.remove(className)
     }
+
+    // Clear any in-progress FLIP inline styles
+    el.style.transform = ""
+    el.style.transition = ""
   })
 })
 
@@ -469,6 +474,7 @@ document.addEventListener("turbo:before-render", async (event) => {
   }
 
   signaturesBefore = new Map()
+  rectsBefore = new Map()
 
   shouldAnimateAfterRender = isPageRefreshVisit()
   clearPendingVisit()
@@ -479,6 +485,10 @@ document.addEventListener("turbo:before-render", async (event) => {
   const animatedElements = Array.from(document.querySelectorAll("[data-turbo-refresh-animate][id]"))
   animatedElements.forEach(el => {
     signaturesBefore.set(el.id, meaningfulUpdateSignature(el))
+  })
+
+  document.querySelectorAll("[data-turbo-refresh-move][id]").forEach(el => {
+    rectsBefore.set(el.id, el.getBoundingClientRect())
   })
 
   let shouldResume = false
@@ -536,11 +546,79 @@ document.addEventListener("turbo:render", () => {
       if (beforeSignature !== afterSignature) {
         applyAnimation(el, "turbo-refresh-change")
       }
+
     })
+
+    // FLIP: animate elements that moved position. Opt-in via data-turbo-refresh-move.
+    // Constant velocity by default (800px/s). Override via CSS custom properties:
+    //   --turbo-refresh-move-speed    (px/s, default 800)
+    //   --turbo-refresh-move-duration (e.g. "500ms"; fixed duration, overrides speed)
+    //   --turbo-refresh-move-easing   (e.g. "ease-in-out", default "ease-out")
+    //
+    // Batched to minimize forced reflows: measure all → invert all → one
+    // reflow → play all.
+    //
+    // Known limitation: moving elements may pass behind stationary siblings
+    // because CSS transforms don't reliably override DOM paint order. We
+    // attempted preserve-3d + translateZ but results were intermittent.
+    // Users can mitigate this with opaque backgrounds on items.
+    const movedElements = []
+    document.querySelectorAll("[data-turbo-refresh-move][id]").forEach(el => {
+      const oldRect = rectsBefore.get(el.id)
+      if (!oldRect) return
+
+      const newRect = el.getBoundingClientRect()
+      const deltaX = oldRect.left - newRect.left
+      const deltaY = oldRect.top - newRect.top
+      if (deltaX === 0 && deltaY === 0) return
+
+      const style = window.getComputedStyle(el)
+      const easing = style.getPropertyValue("--turbo-refresh-move-easing").trim() || "ease-out"
+      const fixedDuration = style.getPropertyValue("--turbo-refresh-move-duration").trim()
+      const speed = parseFloat(style.getPropertyValue("--turbo-refresh-move-speed")) || 800
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY)
+      const duration = fixedDuration || `${Math.round(Math.max(distance / speed * 1000, 150))}ms`
+
+      movedElements.push({ el, deltaX, deltaY, duration, easing })
+    })
+
+    if (movedElements.length > 0) {
+      // Invert: snap moved elements back to their old positions
+      for (const { el, deltaX, deltaY } of movedElements) {
+        el.style.transform = `translate(${deltaX}px, ${deltaY}px)`
+        el.style.transition = "none"
+      }
+
+      // Force one reflow
+      void document.body.offsetWidth
+
+      // Play: transition moved elements to their new positions
+      for (const { el, duration, easing } of movedElements) {
+        const durationMs = parseCssTimeMs(duration)
+
+        el.style.transition = `transform ${duration} ${easing}`
+        el.style.transform = ""
+
+        const cleanup = () => {
+          el.style.transition = ""
+          el.style.transform = ""
+          el.removeEventListener("transitionend", onEnd)
+          el.removeEventListener("transitioncancel", onCancel)
+          if (timer) clearTimeout(timer)
+        }
+        const onEnd = (event) => { if (event.propertyName === "transform") cleanup() }
+        const onCancel = (event) => { if (event.propertyName === "transform") cleanup() }
+        const timer = setTimeout(cleanup, durationMs + 50)
+
+        el.addEventListener("transitionend", onEnd)
+        el.addEventListener("transitioncancel", onCancel)
+      }
+    }
   }
 
   shouldAnimateAfterRender = false
   signaturesBefore = new Map()
+  rectsBefore = new Map()
 })
 
 }

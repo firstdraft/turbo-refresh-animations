@@ -26,9 +26,10 @@ Animates elements that enter, exit, or change during [Turbo Page Refreshes](http
 - [Preserving Elements During External Refreshes](#preserving-elements-during-external-refreshes)
   - [`data-turbo-refresh-preserve`](#data-turbo-refresh-preserve)
   - [Form-specific conveniences](#form-specific-conveniences)
+  - [Flash preserved elements on update](#flash-preserved-elements-on-update)
+- [Common Gotchas](#common-gotchas)
   - [Turbo Stream templates and form redirects](#turbo-stream-templates-and-form-redirects)
   - [Duplicate IDs cause scroll jumps during morphs](#duplicate-ids-cause-scroll-jumps-during-morphs)
-  - [Flash preserved elements on update](#flash-preserved-elements-on-update)
 - [Customization](#customization)
   - [Custom animation classes per element](#custom-animation-classes-per-element)
   - [Enable specific animations](#enable-specific-animations)
@@ -36,6 +37,7 @@ Animates elements that enter, exit, or change during [Turbo Page Refreshes](http
   - [Example animations](#example-animations)
 - [Refresh Deduping Notes](#refresh-deduping-notes)
 - [Disabling the Turbo Progress Bar](#disabling-the-turbo-progress-bar)
+- [Experimental: Position Animations (FLIP)](#experimental-position-animations-flip)
 - [TODOs](#todos)
 - [License](#license)
 
@@ -105,6 +107,7 @@ Elements will animate when created, changed, or deleted during Turbo morphs.
 | `data-turbo-refresh-change="class"` | Custom change animation class (single class token; no spaces) |
 | `data-turbo-refresh-exit="class"` | Custom exit animation class (single class token; no spaces) |
 | `data-turbo-refresh-preserve` | Preserve element during external refresh morphs (your own actions still morph through) |
+| `data-turbo-refresh-move` | Opt-in for FLIP position animations when an element moves during a morph |
 | `data-turbo-refresh-version` | Override change detection (used instead of `textContent`, e.g. `item.cache_key_with_version`) |
 
 ## How It Works
@@ -136,7 +139,7 @@ For precise control (and to count non-text changes as meaningful), use `data-tur
 
 When `data-turbo-refresh-version` is present, it's used instead of `textContent` to decide whether a change is meaningful. This is useful when:
 
-- If you want to respect invisible changes like hidden inputs (e.g. CSRF tokens) or attributes.
+- The element contains invisible changes like hidden inputs (e.g. CSRF tokens) or attributes.
 - Elements include dynamic attributes from JavaScript frameworks.
 - You want explicit control over what constitutes a "change".
 
@@ -171,11 +174,33 @@ This does not require an `id` (unless you also want the element to participate i
 
 Since forms are the most common use case, the library includes special handling:
 
-1. **Submitter's form still clears**: When a user submits a form inside a protected element, that specific element is allowed to morph normally (so the form clears after submission via the redirect response). Other protected elements remain protected.
+1. **Submitter's form still clears**: When a user submits a form inside a preserved element, that specific element is allowed to morph normally (so the form clears after submission via the redirect response). Other preserved elements remain preserved.
 
 2. **Same-page refreshes preserve state**: Even during refresh morphs that stay on the same URL (e.g., `redirect_to` back to the current page), elements with `data-turbo-refresh-preserve` stay preserved. This keeps user-created UI state like open edit forms. If a user clicks a same‑page link inside a preserved element (e.g., "Cancel"), the library sets `data-turbo-action="replace"` on that link so Turbo uses a refresh morph; the initiating element updates while other preserved elements remain open.
    - For this behavior, “same page” means the same `origin + pathname + search` (hash ignored).
    - Note: links to an anchor in the current document (e.g. `/lists/1#comments`) are treated as in-page navigation and are not forced into a refresh morph.
+
+### Flash preserved elements on update
+
+To show a visual indicator when a preserved element's underlying data changes (e.g., another user edits the same item), add `data-turbo-refresh-version`:
+
+```erb
+<div id="<%= dom_id(item) %>"
+     data-turbo-refresh-preserve
+     data-turbo-refresh-animate
+     data-turbo-refresh-version="<%= item.cache_key_with_version %>">
+  <%= form_with model: [item.list, item] do |f| %>
+    <%= f.text_field :title %>
+    <%= f.submit "Save" %>
+  <% end %>
+</div>
+```
+
+When the version changes during an external refresh, the element flashes with the change animation while keeping its current content preserved.
+
+Note: preserved elements can temporarily be in a different "view state" than the server-rendered HTML (e.g., an open edit form vs a read-only item view). To avoid false positives, the library only flashes preserved elements based on `data-turbo-refresh-version` from the incoming HTML. In practice, add `data-turbo-refresh-version` to all render variants of a given `id` if you want flashing to work reliably.
+
+## Common Gotchas
 
 ### Turbo Stream templates and form redirects
 
@@ -190,7 +215,7 @@ When a form submits, Turbo adds `text/vnd.turbo-stream.html` to the request's `A
 
 This is a [browser-level limitation](https://github.com/rails/rails/issues/45566), not a bug in Turbo or Rails. The Fetch API follows redirects internally, and there's no JavaScript hook to modify headers on the redirected request.
 
-**Fix**: Don't put `.turbo_stream.erb` templates on actions that are also redirect targets. For example, if your `create` action does `redirect_to @list`, don't have a `lists/show.turbo_stream.erb`. Instead, use a separate action for inline Turbo Stream flows (e.g., a dedicated `cancel` action), or use the library's same-page link handling for Cancel links inside `data-turbo-refresh-preserve` elements (the library automatically sets `data-turbo-action="replace"` on same-page links inside protected elements, which triggers a page refresh morph).
+**Fix**: Don't put `.turbo_stream.erb` templates on actions that are also redirect targets. For example, if your `create` action does `redirect_to @list`, don't have a `lists/show.turbo_stream.erb`. Instead, use a separate action for inline Turbo Stream flows (e.g., a dedicated `cancel` action), or use the library's same-page link handling for Cancel links inside `data-turbo-refresh-preserve` elements (the library automatically sets `data-turbo-action="replace"` on same-page links inside preserved elements, which triggers a page refresh morph).
 
 ### Duplicate IDs cause scroll jumps during morphs
 
@@ -213,26 +238,6 @@ Rails' `check_box` helper auto-generates an `id` from the attribute name (`item_
 <%= f.check_box :completed, onchange: "this.form.requestSubmit()",
     id: dom_id(item, :completed) %>
 ```
-
-### Flash preserved elements on update
-
-To show a visual indicator when a preserved element's underlying data changes (e.g., another user edits the same item), add `data-turbo-refresh-version`:
-
-```erb
-<div id="<%= dom_id(item) %>"
-     data-turbo-refresh-preserve
-     data-turbo-refresh-animate
-     data-turbo-refresh-version="<%= item.cache_key_with_version %>">
-  <%= form_with model: [item.list, item] do |f| %>
-    <%= f.text_field :title %>
-    <%= f.submit "Save" %>
-  <% end %>
-</div>
-```
-
-When the version changes during an external refresh, the element flashes with the change animation while keeping its current content preserved.
-
-Note: preserved elements can temporarily be in a different "view state" than the server-rendered HTML (e.g., an open edit form vs a read-only item view). To avoid false positives, the library only flashes preserved elements based on `data-turbo-refresh-version` from the incoming HTML. In practice, add `data-turbo-refresh-version` to all render variants of a given `id` if you want flashing to work reliably.
 
 ## Customization
 
@@ -469,6 +474,57 @@ document.addEventListener("turbo:morph", () => {
 ```
 
 See [hotwired/turbo#1221](https://github.com/hotwired/turbo/issues/1221) for discussion on making this configurable in Turbo itself.
+
+## Experimental: Position Animations (FLIP)
+
+When elements reorder during a morph (e.g., a completed todo moves to the bottom of the list), they normally jump to their new position instantly. Add `data-turbo-refresh-move` to opt in to smooth FLIP ([First, Last, Invert, Play](https://aerotwist.com/blog/flip-your-animations/)) position animations:
+
+```erb
+<div id="<%= dom_id(item) %>"
+     data-turbo-refresh-animate
+     data-turbo-refresh-move>
+  <%= item.content %>
+</div>
+```
+
+`data-turbo-refresh-move` is independent of `data-turbo-refresh-animate` — you can use either or both. `animate` controls enter/change/exit CSS class animations; `move` controls FLIP position sliding.
+
+Elements slide from their old position to their new one at constant velocity (800px/s by default).
+
+### Customizing move animations
+
+Control speed, duration, and easing via CSS custom properties:
+
+```css
+[data-turbo-refresh-move] {
+  --turbo-refresh-move-speed: 400;       /* px/s (default 800) */
+  --turbo-refresh-move-easing: ease-in-out; /* default: ease-out */
+}
+```
+
+For a fixed duration (like View Transitions), set `--turbo-refresh-move-duration`. This overrides the speed calculation:
+
+```css
+[data-turbo-refresh-move] {
+  --turbo-refresh-move-duration: 500ms;
+}
+```
+
+### Known limitation: z-index stacking
+
+During the animation, moving elements may pass behind stationary siblings. This happens because CSS transforms don't reliably override DOM paint order. We attempted `transform-style: preserve-3d` with `translateZ` but results were intermittent across browsers.
+
+**Mitigation**: Give animated elements an opaque background so the overlap is less noticeable:
+
+```css
+[data-turbo-refresh-move] {
+  background-color: #fff; /* or your page's background color */
+}
+```
+
+### Why not View Transitions?
+
+The [View Transitions API](https://developer.mozilla.org/en-US/docs/Web/API/View_Transition_API) handles position animations natively (and without the z-index issue, since snapshots render in a dedicated overlay). However, it cannot do clean exit animations — removed elements "ghost" over already-shifted content. See [#3](https://github.com/firstdraft/turbo-refresh-animations/issues/3) for a detailed comparison.
 
 ## TODOs
 
