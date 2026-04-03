@@ -1,6 +1,6 @@
 {
   "name": "turbo-refresh-animations",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "CSS class-based animations for Turbo page refresh morphs with form protection",
   "main": "index.js",
   "type": "module",
